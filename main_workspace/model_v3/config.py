@@ -7,6 +7,7 @@ WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FEATURES_CSV = os.path.join(WORKSPACE, "processed_data", "v4", "daily_features_v4.csv")
 FEATURES_V3_CSV = os.path.join(WORKSPACE, "processed_data", "v3", "daily_features_v3.csv")
 FEATURES_V4_CSV = FEATURES_CSV
+FEATURES_V5_CSV = os.path.join(WORKSPACE, "processed_data", "v5", "daily_features_v5.csv")
 CYCLE_CSV = os.path.join(WORKSPACE, "subdataset", "cycle_clean_2.csv")
 
 # ── Feature groups (for ablation) ────────────────────────────────────────────
@@ -52,6 +53,8 @@ FEAT_ROLLING = [
     for stat in ("rmean5", "rstd5", "rslope5", "dev5")
 ]
 
+FEAT_PREV_CYCLE = ["prev_cycle_len", "prev_cycle_deviation"]
+
 # Default: 23 features (v4: 22 ablation-validated + nightly_temperature_std_z)
 ALL_FEATURES = (
     FEAT_CYCLE_PRIOR
@@ -59,6 +62,9 @@ ALL_FEATURES = (
     + FEAT_RESPIRATORY_Z
     + ["nightly_temperature_std_z"]
 )
+
+# v5: 25 features (v4 default + prev_cycle features)
+ALL_FEATURES_V5 = ALL_FEATURES + FEAT_PREV_CYCLE
 
 # Legacy v3: 22 features without nightly_temperature_std_z
 ALL_FEATURES_V3 = (
