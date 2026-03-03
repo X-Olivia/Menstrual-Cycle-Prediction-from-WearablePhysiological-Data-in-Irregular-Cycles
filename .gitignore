@@ -18,3 +18,8 @@ main_workspace/mcphases-a-dataset-of-physiological-hormonal-and-self-reported-ev
 # 超大 CSV（超过 GitHub 100MB 限制）
 main_workspace/subdataset/wrist_temperature_cycle.csv
 main_workspace/subdataset/heart_rate_cycle.csv
+
+# 数据文件（不上传到 GitHub）
+main_workspace/processed_data/
+main_workspace/subdataset/2/
+main_workspace/subdataset/cycle_clean_2.csv
