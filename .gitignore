@@ -23,3 +23,8 @@ main_workspace/subdataset/heart_rate_cycle.csv
 main_workspace/processed_data/
 main_workspace/subdataset/2/
 main_workspace/subdataset/cycle_clean_2.csv
+
+# 开源/外部数据集（仅保留文档与代码）
+open_source/dataset/**/*.csv
+# 内嵌 git 仓库（避免 submodule 冲突）
+open_source/menstrual_cycle_analysis/

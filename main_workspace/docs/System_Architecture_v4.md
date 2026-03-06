@@ -1,4 +1,4 @@
-# 经期预测系统架构文档
+# 经期预测系统架构文档（v4 更新版）
 
 ## 目录
 
@@ -157,67 +157,42 @@ v4 将特征分为三类，采用不同的归一化策略：
 
 **模型**：LightGBM (Gradient Boosted Decision Trees)
 
-**损失函数**：Huber loss (`huber_delta=3.0`)
+**损失函数**：Huber loss
 
-- 误差 < 3 天：L2（梯度平滑，精确拟合）
-- 误差 > 3 天：L1（抗极端值，不过度惩罚长 horizon 误差）
+- 误差 < δ 天：L2（梯度平滑，精确拟合）
+- 误差 > δ 天：L1（抗极端值，不过度惩罚长 horizon 误差）
 
-**关键超参数**：
+**超参数**（两套配置）：
 
-| 参数                   | 值        | 说明                         |
-| ---------------------- | --------- | ---------------------------- |
-| learning_rate          | 0.03      | 较低学习率配合更多树         |
-| num_leaves             | 20        | 控制模型复杂度               |
-| max_depth              | 5         | 防止过深                     |
-| min_child_samples      | 30        | 叶节点最少样本数，防止过拟合 |
-| subsample              | 0.75      | 行采样                       |
-| colsample_bytree       | 0.75      | 列采样                       |
-| reg_alpha / reg_lambda | 0.5 / 3.0 | L1/L2 正则化                 |
-| early_stopping_rounds  | 80        | 验证集 MAE 无改善时停止      |
+| 参数                   | 原始 `LGB_PARAMS` | Optuna 调参 `LGB_PARAMS_TUNED` |
+| ---------------------- | ------------------- | ------------------------------- |
+| huber_delta            | 3.0                 | 3.9956                          |
+| learning_rate          | 0.03                | 0.0682                          |
+| num_leaves             | 20                  | 44                              |
+| max_depth              | 5                   | 3                               |
+| min_child_samples      | 30                  | 44                              |
+| subsample              | 0.75                | 0.8748                          |
+| colsample_bytree       | 0.75                | 0.5012                          |
+| reg_alpha / reg_lambda | 0.5 / 3.0           | 0.3204 / 7.6198                 |
+| min_split_gain         | 0.05                | 0.1753                          |
+| early_stopping_rounds  | 80                  | 80                              |
 
 **评估指标**：
 
 - MAE（天数）
-- ±1d / ±2d / ±3d 准确率
+- ±1d / ±2d / ±3d 准确率（±3d 定义：绝对误差 < 3.5 天）
 - 按 horizon 分层评估：1-5, 6-10, 11-15, 16-20, 21+ 天
 
 **数据分割**：Subject-level split（15% test, 剩余 80/20 train/val），防止同一受试者的数据泄漏到训练和测试集。
 
 **当前性能**（v4 数据，10-seed 评估）：
 
-| 指标          | 值             |
-| ------------- | -------------- |
-| Test MAE      | 3.337 ± 0.562 |
-| Test ±3d Acc | 58.5% ± 6.4%  |
-| Val MAE       | 4.027 ± 0.840 |
+| 配置          | Test MAE        | Test ±3d Acc    | Val MAE         |
+| ------------- | --------------- | --------------- | --------------- |
+| 原始超参      | 3.337 ± 0.562   | 64.6% ± 6.4%   | 4.027 ± 0.840   |
+| **Optuna 调参** | **3.289 ± 0.572** | **66.5% ± 7.6%** | **3.940 ± 0.836** |
 
-分层 MAE：1-5d: 3.15, 6-10d: 2.82, 11-15d: 3.00, 16-20d: 3.12, 21+d: 3.94
-
-### 3.2 两阶段模型：排卵检测 → 条件预测
-
-基于 Wang 2025 的核心思想：排卵检测后的预测远优于排卵前的盲猜。
-
-#### Stage A：排卵状态判定（仅基于可穿戴设备信号）
-
-**模式一：WT only**（仅腕温）
-
-- 信号：`wt_shift_7v3 > 0.15°C`
-- 生理依据：排卵后孕酮分泌导致基础体温上升 0.2-0.5°C
-
-**模式二：HRV + WT**（默认，推荐）
-
-- 主信号：`wt_shift_7v3 ≥ 0.15°C` → 直接判定排卵后
-- 辅助信号：当 WT shift 较弱（0.10-0.15°C）时，若同时满足 HRV 交感偏移（`hf_mean_z < -0.5` 且 `lf_hf_ratio_z > 0.5`）→ 也判定排卵后
-- 生理依据：Hamidovic 2023 发现排卵期 HF-HRV 显著下降
-
-合并规则：一旦检测到排卵，该周期后续所有天标记为 `is_post_ovulation = 1`（`cummax`）。同时计算 `days_since_ovulation` 作为排卵后模型的额外输入特征。
-
-#### Stage B：条件预测
-
-| 条件                      | 模型                 | 额外特征                        | 训练样本 |
-| ------------------------- | -------------------- | ------------------------------- | -------- |
-| `is_post_ovulation = 1` | LightGBM（精确模式） | 23 维 +`days_since_ovulation` | ~74% 行  |
-| `is_post_ovulation = 0` | LightGBM（先验模式） | 23 维                           | ~26% 行  |
+分层 MAE（Optuna 调参）：1-5d: 3.04, 6-10d: 2.62, 11-15d: 3.00, 16-20d: 3.12, 21+d: 3.97
 
 ---
 
@@ -231,21 +206,24 @@ main_workspace/
 │   ├── cycle_clean.ipynb              # 阶段一：周期清洗
 │   ├── body_data_clean_2.ipynb        # 阶段二：穿戴数据过滤
 │   ├── daily_data_2.ipynb             # 阶段三：日级聚合
-│   ├── build_features_v3.py           # 阶段四：特征管线 v3（旧版）
-│   └── build_features_v4.py           # 阶段四：特征管线 v4（当前默认）
+│   ├── build_features_v4.py           # 阶段四：特征管线 v4（当前默认）
+│   ├── build_features_v7.py           # v7 特征管线（v4 + 子日特征 + 黄体特征，实验性）
+│   └── build_subdaily_features.py     # 从高频 HR/WT/HRV 提取夜间特征（v7 依赖）
 │
-├── model_v3/                          # 模型代码
+├── model/                             # 模型代码（原 model_v3，已重命名）
 │   ├── __init__.py
-│   ├── __main__.py                    # python -m model_v3 入口
-│   ├── config.py                      # 路径、特征组、超参数配置
-│   ├── dataset.py                     # 数据加载 + 标签构造 + 数据分割
+│   ├── __main__.py                    # python -m model 入口
+│   ├── config.py                      # 路径、特征组、超参数配置（含 Optuna 调参结果）
+│   ├── dataset.py                     # 数据加载 + 标签构造 + Subject/LLCO 分割
 │   ├── train_lgb.py                   # LightGBM 训练 + 预测 + 特征重要性
 │   ├── evaluate.py                    # MAE / ±kd / 分层评估
 │   ├── run_experiment.py              # 单次实验 + 消融实验
-│   ├── two_stage.py                   # 两阶段排卵检测 + 条件预测
-│   ├── robust_eval.py                 # 多种子稳健评估
-│   ├── run_ab_v3v4.py                 # v3 vs v4 归一化 A/B 对比
-│   └── run_ab_v4_fixes.py            # v3 vs v4(4fixes) 最终对比
+│   ├── robust_eval.py                 # 多种子稳健评估（Subject Split / LLCO）
+│   └── tune_optuna.py                 # Optuna 超参数自动调优
+│
+├── archive/                           # 归档（不再使用的实验代码）
+│   ├── data_process/                  # build_features_v3/v5/v6.py 等
+│   └── model/                         # A/B 对比、残差实验、GRU、两阶段等
 │
 ├── subdataset/
 │   ├── cycle_clean_2.csv              # 阶段一输出（4825 行，173 周期）
@@ -253,8 +231,7 @@ main_workspace/
 │
 ├── processed_data/
 │   ├── 2/sleep.csv                    # 阶段三输出（4825 行 × 54 列）
-│   ├── v3/daily_features_v3.csv       # v3 管线输出（旧版）
-│   └── v4/daily_features_v4.csv       # v4 管线输出（当前默认）
+│   └── v4/daily_features_v4.csv       # v4 管线输出（当前默认，3276 行 × 106 维）
 │
 └── mcphases-.../                      # mcPHASES 原始数据集（.gitignore）
 ```
@@ -317,17 +294,17 @@ main_workspace/
 │  加载特征 → 构造标签 days_until_next_menses                  │
 │  → 过滤 >45 天周期 → Subject-level split                    │
 │           │                                                 │
-│      ┌────┴──────────────┐                                  │
-│      ▼                   ▼                                  │
-│  [单阶段]             [两阶段]                               │
-│  train_lgb.py         two_stage.py                          │
-│  23 维 → LightGBM     WT+HRV 排卵判定 → Pre/Post 分流       │
-│  Huber loss           Pre-ov: 23 维 LightGBM                │
-│  early stopping       Post-ov: 24 维 LightGBM               │
-│      │                   │                                  │
-│      ▼                   ▼                                  │
+│           ▼                                                 │
+│  [train_lgb.py]                                             │
+│  23 维 → LightGBM (Huber loss + early stopping)             │
+│  支持传入自定义超参 (params=LGB_PARAMS_TUNED)                │
+│           │                                                 │
+│           ▼                                                 │
 │  [evaluate.py]                                              │
 │  MAE / ±1d / ±2d / ±3d / 按 horizon 分层                    │
+│                                                             │
+│  [robust_eval.py] ← 推荐入口                                │
+│  10-seed 多种子评估，消除小样本方差                            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -347,66 +324,80 @@ conda run -n menstrual python data_process/build_features_v4.py
 
 #### 模型训练与评估
 
-提供四种运行模式，区别如下：
+提供三种运行模式：
 
-| 命令                   | 模型架构                     | 运行次数                  | 适用场景                                 |
-| ---------------------- | ---------------------------- | ------------------------- | ---------------------------------------- |
-| `python -m model_v3` | 单阶段 LightGBM              | 1 次（固定 seed=42 分组） | 快速验证，看单次结果                     |
-| `run_multi_seed(10)` | 单阶段 LightGBM              | 10 次（每次不同随机分组） | **推荐**，消除小样本方差，结果可靠 |
-| `run_two_stage()`    | 两阶段：排卵检测 → 条件预测 | 1 次                      | 评估两阶段架构效果                       |
-| `run_ablation()`     | 单阶段 LightGBM              | ~6 次（逐步添加特征组）   | 分析各特征组贡献                         |
+| 命令                                       | 运行次数                  | 适用场景                                 |
+| ------------------------------------------ | ------------------------- | ---------------------------------------- |
+| `python -m model`                        | 1 次（固定 seed=42 分组） | 快速验证，看单次结果                     |
+| `run_multi_seed(10, params=...)`         | 10 次（每次不同随机分组） | **推荐**，消除小样本方差，结果可靠 |
+| `run_ablation()`                         | ~6 次（逐步添加特征组）   | 分析各特征组贡献                         |
 
-**单阶段 vs 两阶段的区别**：
-
-- **单阶段**：一个 LightGBM，输入 23 维特征，直接预测 `days_until_next_menses`
-- **两阶段**：先用腕温 + HRV 信号判断「当天是否已排卵」，再根据排卵状态分流到两个独立的 LightGBM（排卵后模型多一个 `days_since_ovulation` 特征，共 24 维）。原理来自 Wang 2025：排卵后黄体期长度相对固定（~14 天），「知道已排卵」能提升预测精度
-- **为什么推荐 `run_multi_seed`**：数据集仅 40 人，单次实验中 6 人进入测试集，随机分到哪些人对结果影响很大（MAE 波动 ±0.5-1 天）。多种子跑 10 次取均值后结果更稳定，文档中报告的 `MAE 3.337 ± 0.562` 即由此得到。
+**为什么推荐 `run_multi_seed`**：数据集仅 40 人，单次实验中 6 人进入测试集，随机分到哪些人对结果影响很大（MAE 波动 ±0.5-1 天）。多种子跑 10 次取均值后结果更稳定。
 
 ```bash
 cd main_workspace
 
-# ① 快速查看单次结果
-conda run -n menstrual python -m model_v3
+# ① 快速查看单次结果（使用默认超参）
+conda run -n menstrual python -m model
 
-# ② 多种子稳健评估（推荐，用于报告/论文）
-conda run -n menstrual python -c "from model_v3.robust_eval import run_multi_seed; run_multi_seed(10)"
-
-# ③ 两阶段模型（默认 HRV+WT 排卵检测）
-conda run -n menstrual python -c "from model_v3.two_stage import run_two_stage; run_two_stage()"
-
-# ④ 消融实验（逐步添加特征组，分析各组贡献）
-conda run -n menstrual python -c "from model_v3.run_experiment import run_ablation; run_ablation()"
-```
-
-#### 对比实验（可选）
-
-```bash
-cd main_workspace
-
-# 用旧版 v3 数据运行（供对比）
+# ② 多种子稳健评估 —— 默认超参（MAE 3.337, ±3d 64.6%）
 conda run -n menstrual python -c "
-from model_v3.config import FEATURES_V3_CSV
-from model_v3.robust_eval import run_multi_seed
-run_multi_seed(10, features_csv=FEATURES_V3_CSV)
+from model.robust_eval import run_multi_seed
+run_multi_seed(10)
 "
 
-# v3 vs v4 完整 A/B 对比
-conda run -n menstrual python model_v3/run_ab_v4_fixes.py
+# ③ 多种子稳健评估 —— Optuna 调参超参（MAE 3.289, ±3d 66.5%，推荐）
+conda run -n menstrual python -c "
+from model.robust_eval import run_multi_seed
+from model.config import LGB_PARAMS_TUNED
+run_multi_seed(10, params=LGB_PARAMS_TUNED)
+"
+
+# ④ 消融实验（逐步添加特征组，分析各组贡献）
+conda run -n menstrual python -c "
+from model.run_experiment import run_ablation
+run_ablation()
+"
+
+# ⑤ Optuna 超参数自动调优（80 trials × 3 seeds，约 15-30 分钟）
+conda run -n menstrual python -c "
+from model.tune_optuna import tune_and_evaluate
+tune_and_evaluate(n_trials=80)
+"
 ```
 
 ### 4.4 各模块职责
 
-| 文件                     | 职责                                           | 核心函数 / 接口                                                      |
-| ------------------------ | ---------------------------------------------- | -------------------------------------------------------------------- |
-| `config.py`            | 路径、特征列表(23维)、超参数                   | `ALL_FEATURES`(23维), `ALL_FEATURES_V3`(22维), `LGB_PARAMS`    |
-| `dataset.py`           | 数据加载、标签构造、Subject-level 分割         | `load_data(features_csv=)`, `subject_split()`                    |
-| `train_lgb.py`         | LightGBM 训练逻辑                              | `train_lightgbm()`, `predict()`, `feature_importance()`        |
-| `evaluate.py`          | 评估指标计算与格式化输出                       | `compute_metrics()`, `stratified_metrics()`, `print_metrics()` |
-| `run_experiment.py`    | 单次实验与消融实验                             | `run_experiment(feature_list=, features_csv=)`, `run_ablation()` |
-| `two_stage.py`         | 两阶段：排卵标签 + 双模型训练 + 条件预测       | `build_ovulation_labels()`, `run_two_stage(mode=)`               |
-| `robust_eval.py`       | 多种子评估减少小样本方差                       | `run_multi_seed(n_seeds=, features_csv=, feature_list=)`           |
-| `build_features_v4.py` | 特征管线 v4：5 项修复 + per-cycle-early z-norm | `main()` → 10 步顺序执行                                          |
-| `build_features_v3.py` | 特征管线 v3（旧版，保留供对比）                | `main()` → 7 步顺序执行                                           |
+**`model/` 目录（10 个文件）**：
+
+| 文件                     | 职责                                              | 核心函数 / 接口                                                                |
+| ------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `config.py`            | 路径、特征列表、超参数（含 Optuna 调参结果）      | `ALL_FEATURES`(23维), `LGB_PARAMS`, `LGB_PARAMS_TUNED`                  |
+| `dataset.py`           | 数据加载、标签构造、Subject/LLCO 分割             | `load_data(features_csv=)`, `subject_split()`, `cycle_split()`         |
+| `train_lgb.py`         | LightGBM 训练逻辑                                 | `train_lightgbm(params=)`, `predict()`, `feature_importance()`         |
+| `evaluate.py`          | 评估指标计算与格式化输出                          | `compute_metrics()`, `stratified_metrics()`, `print_metrics()`         |
+| `run_experiment.py`    | 单次实验与消融实验                                | `run_experiment(feature_list=, features_csv=)`, `run_ablation()`         |
+| `robust_eval.py`       | 多种子评估减少小样本方差                          | `run_multi_seed(n_seeds=, params=)`, `run_multi_seed_llco(params=)`      |
+| `tune_optuna.py`       | Optuna 超参数自动调优 + 评估                      | `tune(n_trials=)`, `tune_and_evaluate()`                                   |
+
+**`data_process/` 目录（6 个文件）**：
+
+| 文件                         | 职责                                              | 核心函数 / 接口                |
+| ---------------------------- | ------------------------------------------------- | ------------------------------ |
+| `build_features_v4.py`    | 特征管线 v4：5 项修复 + per-cycle-early z-norm    | `main()` → 10 步顺序执行    |
+| `build_features_v7.py`    | v7 管线：v4 + 子日特征 + 黄体特征（实验性）       | `main()`                     |
+| `build_subdaily_features.py` | 从高频 HR/WT/HRV 提取夜间特征                   | `process_hr/wt/hrv_features()` |
+
+**`archive/` 归档目录（13 个文件）**：
+
+| 子目录           | 文件                                           | 归档原因                              |
+| ---------------- | ---------------------------------------------- | ------------------------------------- |
+| `data_process/` | `build_features_v3/v5/v6.py`                 | 被 v4 取代或实验未产生改善            |
+| `data_process/` | `baseline_ovulation_probe.py`                | 依赖已删除的 `split.py`，无法运行   |
+| `model/`        | `run_ab_v3v4.py`, `run_ab_v4_fixes/rolling.py` | 导入已不存在的 `model_v3` 包        |
+| `model/`        | `compare_all.py`, `residual_experiment.py`   | 一次性对比 / 实验已验证无效           |
+| `model/`        | `two_stage.py`                               | 两阶段实验                            |
+| `model/`        | `seq_model.py`, `seq_dataset.py`, `run_seq_experiment.py` | GRU 序列模型实验         |
 
 ### 4.5 数据规模概要
 
@@ -421,15 +412,30 @@ conda run -n menstrual python model_v3/run_ab_v4_fixes.py
 
 ## 5. 实验记录
 
-### 5.1 v3 → v4 改进历程
+### 5.1 v3 → v4 → Optuna 改进历程
 
-| 版本                   | 改动                                           | Test MAE                 | Test ±3d       | 说明                           |
-| ---------------------- | ---------------------------------------------- | ------------------------ | --------------- | ------------------------------ |
-| v3 baseline            | per-subject z-norm, 22 feat, 固定 28 天 frac   | 4.295 ± 0.609           | 46.1%           | 原始基线                       |
-| v4 归一化实验          | per-cycle-early z-norm                         | 4.377 ± 0.506           | 46.1%           | 仅改 z-norm，无显著改善        |
-| **v4 + 4 fixes** | + frac 修复 + RHR median + 边界移除 + temp_std | **3.337 ± 0.562** | **58.5%** | **MAE -22%, ±3d +12pp** |
+| 版本                        | 改动                                           | Test MAE              | Test ±3d Acc         | 说明                        |
+| --------------------------- | ---------------------------------------------- | --------------------- | -------------------- | --------------------------- |
+| v3 baseline                 | per-subject z-norm, 22 feat, 固定 28 天 frac   | 4.295 ± 0.609         | 46.1%                | 原始基线                    |
+| v4 归一化实验               | per-cycle-early z-norm                         | 4.377 ± 0.506         | 46.1%                | 仅改 z-norm，无显著改善     |
+| v4 + 4 fixes                | + frac 修复 + RHR median + 边界移除 + temp_std | 3.337 ± 0.562         | 64.6% ± 6.4%        | MAE -22%                    |
+| **v4 + 4 fixes + Optuna** | + 超参数自动调优 (80 trials × 3 seeds)         | **3.289 ± 0.572** | **66.5% ± 7.6%** | **当前最佳，MAE -23.4%** |
 
-### 5.2 v4 数据质量修复详情
+### 5.2 v5/v6/v7 实验记录（均未超越 v4 + Optuna，已归档）
+
+| 版本 | 改动                                                       | Test MAE         | Test ±3d      | 结论                                    |
+| ---- | ---------------------------------------------------------- | ---------------- | ------------- | --------------------------------------- |
+| v5   | v4 + prev_cycle_len / prev_cycle_deviation                 | ~3.33            | ~64%          | 无显著改善                              |
+| v6   | v4 + 3 相位估计 + 11 转变特征 (共 37 维)                   | 3.295 ± 0.583   | 65.4%         | 特征过多导致过拟合                      |
+| v7 full | v4 + 20 子日特征 + 5 黄体特征 (共 48 维)                | 3.481            | ~60%          | 严重过拟合，反而变差                    |
+| v7 slim | v4 + est_days_remaining_luteal (共 24 维)               | 3.245 ± 0.456   | 65.6%         | MAE 略降但 ±3d 降低，且**存在数据泄漏** |
+
+**v7 数据泄漏问题**：
+- `personal_avg_luteal_len`：使用了全部周期（含测试周期）的 cycle_end 计算黄体期长度
+- `detect_temp_shift`：回溯标注温度转变日，使周期早期天数看到了"未来"温度信息
+- 因此 v7 的 MAE 改善不可信。**当前推荐使用 v4 + Optuna 调参作为基线**
+
+### 5.3 v4 数据质量修复详情
 
 基于 [mcPHASES 官方 GitHub](https://github.com/chai-toronto/mcphases) 示例代码分析，发现并修复了以下问题：
 
@@ -438,17 +444,17 @@ conda run -n menstrual python model_v3/run_ab_v4_fixes.py
 3. **边界周期**：每人每 study_interval 最后一个周期可能被研究截断而不完整，官方代码也排除首尾周期。
 4. **`nightly_temperature_std`**：来自 `computed_temperature.csv` 的 `baseline_relative_nightly_standard_deviation`，反映夜间温度波动程度。
 
-### 5.3 分层 MAE 对比
+### 5.4 分层 MAE 对比
 
-| Horizon  | v3 MAE | v4 MAE | 改善 |
-| -------- | ------ | ------ | ---- |
-| 1-5 天   | 4.396  | 3.151  | -28% |
-| 6-10 天  | 3.907  | 2.819  | -28% |
-| 11-15 天 | 3.560  | 3.001  | -16% |
-| 16-20 天 | 3.573  | 3.120  | -13% |
-| 21+ 天   | 5.228  | 3.942  | -25% |
+| Horizon  | v3 MAE | v4 MAE | v4+Optuna MAE | 改善 (v3→v4+Optuna) |
+| -------- | ------ | ------ | ------------- | -------------------- |
+| 1-5 天   | 4.396  | 3.151  | 3.038         | -31%                 |
+| 6-10 天  | 3.907  | 2.819  | 2.616         | -33%                 |
+| 11-15 天 | 3.560  | 3.001  | 3.002         | -16%                 |
+| 16-20 天 | 3.573  | 3.120  | 3.123         | -13%                 |
+| 21+ 天   | 5.228  | 3.942  | 3.965         | -24%                 |
 
-### 5.4 消融实验结果（基于 v3 数据）
+### 5.5 消融实验结果（基于 v3 数据）
 
 详见 `docs/Ablation_Study_Results.md`。核心结论：
 
