@@ -181,12 +181,12 @@ The true marginal contribution of temperature pattern recognition is approximate
 
 ## 6. 实验代码 / Experiment Code
 
-完整实验代码: `main_workspace/model/experiment/run_leakage_check.py`
+完整实验代码: `main_workspace/archive/model/experiment/run_leakage_check.py`（已归档）
 
 运行方式:
 ```bash
 cd /Users/xujing/FYP/main_workspace
-python -m model.experiment.run_leakage_check
+python -m model.experiment.run_leakage_check  # 脚本已移至 archive/model/experiment/，需从 main_workspace 根目录并将该路径加入 PYTHONPATH 运行
 ```
 
 ---

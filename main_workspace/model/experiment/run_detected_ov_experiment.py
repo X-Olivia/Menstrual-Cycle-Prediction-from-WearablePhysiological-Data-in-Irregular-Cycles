@@ -230,6 +230,7 @@ def main():
 
             df_train = df.iloc[train_idx]
             df_test = df.iloc[test_idx].copy()
+            train_uids = set(df_train["id"].unique())  # personal only for train users (no leakage)
 
             # Train LightGBM
             gss2 = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=seed + 100)
@@ -257,7 +258,7 @@ def main():
                     ov_dic = detected_ov[sgk]
                     if dic >= ov_dic + 2:
                         days_since = dic - ov_dic
-                        luts = personal_luteal.get(uid, [])
+                        luts = personal_luteal.get(uid, []) if uid in train_uids else []
                         avg_lut = np.mean(luts) if luts else pop_luteal_mean
                         pred_det[i] = max(1.0, avg_lut - days_since)
 
@@ -271,7 +272,7 @@ def main():
                     ov_dic = lh_ov_dict[sgk]
                     if dic >= ov_dic + 2:
                         days_since = dic - ov_dic
-                        luts = personal_luteal.get(uid, [])
+                        luts = personal_luteal.get(uid, []) if uid in train_uids else []
                         avg_lut = np.mean(luts) if luts else pop_luteal_mean
                         pred_ora[i] = max(1.0, avg_lut - days_since)
 

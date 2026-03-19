@@ -74,6 +74,7 @@ def main():
 
         df_train = df.iloc[train_idx]
         df_test = df.iloc[test_idx]
+        train_uids = set(df_train["id"].unique())  # personal_luteal only for train users (no leakage)
 
         gss2 = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=seed + 100)
         tr_idx, val_idx = next(gss2.split(df_train, groups=df_train["id"]))
@@ -106,7 +107,8 @@ def main():
                 ov_dic = lh_ov_dict[sgk]
                 if dic >= ov_dic + 2:  # 2-day realistic detection delay
                     days_since_ov = dic - ov_dic
-                    luts = personal_luteal.get(uid, [])
+                    # Use personal only for train users; test users use pop to avoid leakage
+                    luts = personal_luteal.get(uid, []) if uid in train_uids else []
                     avg_lut = np.mean(luts) if luts else pop_luteal_mean
                     pred_hybrid[i] = max(1.0, avg_lut - days_since_ov)
                     ov_used += 1

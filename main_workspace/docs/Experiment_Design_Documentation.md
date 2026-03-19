@@ -6,14 +6,14 @@
 
 ## 目录 / Table of Contents
 
-1. [run_experiment.py — LightGBM 基础实验](#1-run_experimentpy)
+1. [run_experiment.py — LightGBM 基础实验](#1-run_experimentpy) *(已归档至 archive/model/experiment/)*
 2. [robust_eval.py — 多种子鲁棒性评估](#2-robust_evalpy)
-3. [tune_optuna.py — Optuna 超参数调优](#3-tune_optunapy)
+3. [tune_optuna.py — Optuna 超参数调优](#3-tune_optunapy) *(已归档至 archive/model/experiment/)*
 4. [run_oracle_experiment.py — Oracle 上界实验](#4-run_oracle_experimentpy)
 5. [run_detected_ov_experiment.py — 排卵检测混合模型实验](#5-run_detected_ov_experimentpy)
-6. [run_highfreq_temp_experiment.py — 高频温度排卵检测实验](#6-run_highfreq_temp_experimentpy)
-7. [run_ovulation_experiments.py — 排卵检测综合对比实验](#7-run_ovulation_experimentspy)
-8. [run_leakage_check.py — 数据泄漏审计实验](#8-run_leakage_checkpy)
+6. [run_highfreq_temp_experiment.py — 高频温度排卵检测实验](#6-run_highfreq_temp_experimentpy) *(已归档)*
+7. [run_ovulation_experiments.py — 排卵检测综合对比实验](#7-run_ovulation_experimentspy) *(已归档)*
+8. [run_leakage_check.py — 数据泄漏审计实验](#8-run_leakage_checkpy) *(已归档，脚本在 archive/model/experiment/)*
 9. [ovulation_cnn.py — 1D-CNN 排卵回归模型实验](#9-ovulation_cnnpy-位于-model)
 
 ---

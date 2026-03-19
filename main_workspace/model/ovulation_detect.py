@@ -19,7 +19,11 @@ from .config import CYCLE_CSV
 # ---------------------------------------------------------------------------
 
 def get_lh_ovulation_labels():
-    """Get LH-based ovulation labels with reasonable luteal lengths."""
+    """Get LH-based ovulation labels with reasonable luteal lengths.
+
+    Original method: ovulation_prob_fused > 0.5 + luteal 8-20 filter.
+    Returns 95 labeled cycles.
+    """
     cc = pd.read_csv(CYCLE_CSV)
     ov = cc[cc["ovulation_prob_fused"] > 0.5]
     lh_ov = (
@@ -36,6 +40,127 @@ def get_lh_ovulation_labels():
     lh_ov = lh_ov[(lh_ov["luteal_len"] >= 8) & (lh_ov["luteal_len"] <= 20)]
     lh_ov["ov_dic"] = lh_ov["ov_day_in_study"] - lh_ov["cs"]
     return lh_ov
+
+
+def get_enhanced_ovulation_labels():
+    """Enhanced ovulation labels: recovers extra cycles beyond the original 95.
+
+    Recovery strategy with strict quality control:
+      1. ovulation_prob_fused > 0.5 + luteal [8,20] — original 95 cycles
+      2. ovulation_prob_fused > 0 (lowered threshold) + luteal [10,16]
+      3. LH peak + 1 day where LH > max(baseline*2.5, 10) + luteal [10,16]
+         - Requires LH peak NOT during menstrual phase
+         - Rejects cycles with dual LH surges (>10 days apart)
+      4. Fertility→Luteal phase transition + luteal [10,16]
+
+    Methods 2-4 use a tighter luteal filter [10,16] to ensure label quality.
+    Returns DataFrame with same schema as get_lh_ovulation_labels plus 'method'.
+    """
+    cc = pd.read_csv(CYCLE_CSV)
+    rows = []
+
+    for sgk, grp in cc.groupby("small_group_key"):
+        grp = grp.sort_values("day_in_study").reset_index(drop=True)
+        cs = grp["day_in_study"].min()
+        ce = grp["day_in_study"].max()
+        clen = ce - cs
+        n = len(grp)
+        uid = grp["id"].values[0]
+        si = grp["study_interval"].values[0]
+
+        if n < 10:
+            continue
+
+        ov_day = None
+        method = None
+
+        # --- Method 1: ov_prob > 0.5 (original, luteal [8,20]) ---
+        ov_rows = grp[grp["ovulation_prob_fused"] > 0.5]
+        if len(ov_rows) > 0:
+            best = ov_rows.loc[ov_rows["ovulation_prob_fused"].idxmax()]
+            ov_dic = best["day_in_study"] - cs
+            luteal = ce - best["day_in_study"]
+            if 8 <= luteal <= 20 and ov_dic >= 5:
+                ov_day = ov_dic
+                method = "ov_prob>0.5"
+
+        # --- Method 2: ov_prob > 0 (lowered threshold, tighter luteal [10,16]) ---
+        if ov_day is None:
+            ov_rows_all = grp[grp["ovulation_prob_fused"] > 0]
+            if len(ov_rows_all) > 0:
+                best = ov_rows_all.loc[ov_rows_all["ovulation_prob_fused"].idxmax()]
+                ov_dic = best["day_in_study"] - cs
+                luteal = ce - best["day_in_study"]
+                if 10 <= luteal <= 16 and ov_dic >= 5:
+                    ov_day = ov_dic
+                    method = "ov_prob_lowered"
+
+        # --- Method 3: LH peak + 1 (tighter luteal [10,16]) ---
+        if ov_day is None:
+            lh_data = grp[grp["lh"].notna() & (grp["lh"] > 0)]
+            if len(lh_data) > 0 and lh_data["lh"].max() > 10:
+                menses_end_dis = None
+                menses_days = grp[grp["phase"] == "Menstrual"]
+                if len(menses_days) > 0:
+                    menses_end_dis = menses_days["day_in_study"].max() - cs
+
+                    bl_rows = grp[
+                        (grp["day_in_study"] > menses_days["day_in_study"].max())
+                        & (grp["day_in_study"] <= menses_days["day_in_study"].max() + 4)
+                        & (grp["lh"].notna())
+                    ]
+                    baseline_lh = bl_rows["lh"].mean() if len(bl_rows) >= 2 else lh_data["lh"].quantile(0.25)
+                else:
+                    baseline_lh = lh_data["lh"].quantile(0.25)
+
+                threshold = max(baseline_lh * 2.5, 10)
+                surge_rows = lh_data[lh_data["lh"] >= threshold]
+
+                if len(surge_rows) > 0:
+                    peak_row = surge_rows.loc[surge_rows["lh"].idxmax()]
+                    lh_peak_dic = peak_row["day_in_study"] - cs
+
+                    # Reject if LH peak is during menstrual phase
+                    if menses_end_dis is not None and lh_peak_dic <= menses_end_dis:
+                        pass
+                    else:
+                        # Reject if dual surges far apart (>10 days)
+                        surge_days = sorted((surge_rows["day_in_study"] - cs).values)
+                        has_dual = any(surge_days[i+1] - surge_days[i] > 10
+                                       for i in range(len(surge_days) - 1))
+                        if not has_dual:
+                            ov_est = lh_peak_dic + 1
+                            luteal_est = clen - ov_est
+                            if 10 <= luteal_est <= 16 and 5 <= ov_est <= clen - 3:
+                                ov_day = ov_est
+                                method = "lh_peak+1"
+
+        # --- Method 4: Phase transition (tighter luteal [10,16]) ---
+        if ov_day is None:
+            fert_days = grp[grp["phase"] == "Fertility"]["day_in_study"]
+            lut_days = grp[grp["phase"] == "Luteal"]["day_in_study"]
+            if len(fert_days) > 0 and len(lut_days) > 0:
+                last_fert = fert_days.max()
+                ov_est = last_fert - cs
+                luteal = ce - last_fert
+                if 10 <= luteal <= 16 and 5 <= ov_est <= clen - 3:
+                    ov_day = ov_est
+                    method = "phase_fert_last"
+
+        if ov_day is not None:
+            rows.append({
+                "small_group_key": sgk,
+                "id": uid,
+                "study_interval": si,
+                "ov_day_in_study": cs + ov_day,
+                "cs": cs,
+                "ce": ce,
+                "luteal_len": clen - ov_day,
+                "ov_dic": ov_day,
+                "method": method,
+            })
+
+    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------------------

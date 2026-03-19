@@ -250,7 +250,7 @@ def predict_menses(cycle_series, detections, subj_order, lh_ov_dict,
             if det is not None:
                 ov_d = det[0]
                 el = actual - ov_d
-                if 8 <= el <= 22:
+                if 8 <= el <= 20:  # match get_lh_ovulation_labels luteal range
                     subj_past_luteal[uid].append(el)
 
     def _s(errs, tag):
