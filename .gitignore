@@ -41,6 +41,19 @@ personalization_stratified/outputs/
 new_workspace/record/experiment/multisignal_pipeline/prefix_full_*.log
 new_workspace/record/experiment/multisignal_pipeline/logs/
 
+# new_workspace 论文 LaTeX 编译产物（不上传）
+new_workspace/paper/**/*.aux
+new_workspace/paper/**/*.bbl
+new_workspace/paper/**/*.blg
+new_workspace/paper/**/*.bcf
+new_workspace/paper/**/*.fdb_latexmk
+new_workspace/paper/**/*.fls
+new_workspace/paper/**/*.log
+new_workspace/paper/**/*.out
+new_workspace/paper/**/*.run.xml
+new_workspace/paper/**/*.synctex.gz
+new_workspace/paper/**/*synctex(busy)
+
 # 数据文件（不上传到 GitHub）
 main_workspace/processed_data/
 main_workspace/subdataset/2/
