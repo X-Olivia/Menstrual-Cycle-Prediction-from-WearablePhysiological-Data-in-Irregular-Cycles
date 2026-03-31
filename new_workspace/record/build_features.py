@@ -8,7 +8,8 @@ Produces daily_features_v4.csv from:
   - Cycle: processed_dataset/cycle_cleaned_ov.csv (new_workspace).
 
 v4 fixes: per-cycle-early z-norm, day_in_cycle_frac from hist_cycle_len, RHR median,
-boundary cycles removed, nightly_temperature_std. Output: processed_data/v4/daily_features_v4.csv.
+nightly_temperature_std.
+Output: processed_data/v4/daily_features_v4.csv.
 
 Usage (from new_workspace):
   python record/build_features_v4.py

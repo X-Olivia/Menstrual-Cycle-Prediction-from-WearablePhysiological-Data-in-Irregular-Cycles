@@ -19,6 +19,23 @@ main_workspace/mcphases-a-dataset-of-physiological-hormonal-and-self-reported-ev
 main_workspace/subdataset/wrist_temperature_cycle.csv
 main_workspace/subdataset/heart_rate_cycle.csv
 
+# new_workspace 特征/模型缓存（不上传）
+new_workspace/processed_dataset/cache/
+
+# new_workspace 处理后日特征与周期表（不上传）
+new_workspace/processed_dataset/daily_features/
+new_workspace/processed_dataset/cycle_cleaned.csv
+new_workspace/processed_dataset/cycle_cleaned_ov.csv
+
+# new_workspace 原始/导出信号 CSV（体积超限，不上传）
+new_workspace/processed_dataset/signals/
+
+# new_workspace 本地副本的 mcphases 完整导出（不上传）
+new_workspace/mcphases-a-dataset-of-physiological-hormonal-and-self-reported-events-and-symptoms-for-menstrual-health-tracking-with-wearables-1.0.0/
+
+# 实验跑数输出 CSV（不上传）
+new_workspace/record/experiment/personalization_stratified/outputs/
+
 # 数据文件（不上传到 GitHub）
 main_workspace/processed_data/
 main_workspace/subdataset/2/

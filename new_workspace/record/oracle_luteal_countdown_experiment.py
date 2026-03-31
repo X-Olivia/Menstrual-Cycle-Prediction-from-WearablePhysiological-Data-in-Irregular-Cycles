@@ -1,23 +1,32 @@
-"""Oracle + Luteal Countdown Experiment (Menstrual Prediction).
+"""Oracle + 黄体倒计时实验（经期预测）。
 
-Compares:
-  1. LightGBM only (full-cycle regression).
-  2. Detected-ovulation hybrid: ovulation after detection → luteal countdown; else LightGBM.
-  3. Oracle hybrid: ovulation from LH ground truth → luteal countdown (post-ov); else LightGBM.
+比较三种策略/模型：
+1) LightGBM only：对全周期特征做回归，直接预测 `days_until_next_menses`。
+2) Detected-ovulation hybrid：先从可穿戴信号预测排卵日（由排卵分类器输出的 `ov_prob`
+   经过阈值/累积/贝叶斯等策略得到检测排卵日）。若当前天满足 `day_in_cycle >= ov_day + 2`，
+   则对“排卵后阶段”使用黄体倒计时规则修正预测；否则保持 LightGBM 输出。
+3) Oracle hybrid：排卵日使用 LH 的真值（Ground Truth）作为“Oracle”；其余逻辑同上。
 
-The "Oracle" part is: for days after ovulation, use LH true ovulation day + (personal or
-population) luteal length to predict days_until_next_menses; no detection error.
+Oracle 的核心思想：在排卵后，用“LH 真值排卵日 +（个人或人群平均）黄体期长度”推断到下一次月经还剩几天，
+从而消除“排卵检测误差”对预测的影响。
 
-All inputs use new_workspace data by default:
-  - cycle_cleaned_ov.csv, processed_dataset/signals/*.csv
-  - daily_features_v4.csv from new_workspace if present, else main_workspace (fallback).
+默认数据读取 `new_workspace`：
+  - `processed_dataset/cycle_cleaned_ov.csv`
+  - `processed_dataset/signals/*.csv`（温度/心率/HRV/腕温等已按天聚合的数据）
+  - `processed_dataset/daily_features/daily_features_v4.csv`（若不存在则回退到 `main_workspace`）
 
-Usage:
-  cd /Users/xujing/FYP/new_workspace
+运行：
   python record/oracle_luteal_countdown_experiment.py
 
-  Or from repo root:
-  python new_workspace/record/oracle_luteal_countdown_experiment.py
+输出（仅打印到终端，不写入结果文件）包含：
+  - 数据规模、可用于排卵分类的标注数量与比例
+  - 黄体期估计的人群均值（用于无个人黄体期时的回退）
+  - 排卵检测器的 LOSO AUC
+  - 三种排卵检测策略（`threshold`/`cumulative`/`bayesian`）的排卵日检测评估
+    （检测到的周期数、预测相对偏差均值、±3d/±5d 覆盖率）
+  - 10 次（按受试者分组的）评估下的经期预测结果：LightGBM only / 检测-黄体倒计时 / Oracle-黄体倒计时
+    的 MAE 与 ±3d 指标
+  - 以 LH 排卵日为锚点的误差拆分（Pre：ov-7/ov-3/ov-1；Post：ov+2/ov+5/ov+10）
 """
 from __future__ import annotations
 
@@ -206,6 +215,28 @@ def main():
         auc = roc_auc_score(y_ov[has_prob], valid.loc[has_prob, "ov_prob"])
         print(f"Ovulation classifier LOSO AUC: {auc:.3f}")
 
+    # Anchor days relative to LH ground-truth ovulation day (ov_true).
+    # We report metrics separately for pre-ovulation vs post-ovulation anchors.
+    # Pre:  ov-7, ov-3, ov-1
+    # Post: ov+2, ov+5, ov+10
+    anchors_pre = [-7, -3, -1]
+    anchors_post = [2, 5, 10]
+    anchors_all = anchors_pre + anchors_post
+
+    def _metrics_from_abs_err(ae: np.ndarray) -> dict:
+        # Mirrors model.evaluate.compute_metrics' threshold convention:
+        # acc_1d uses err < 1.5, acc_2d uses err < 2.5, acc_3d uses err < 3.5.
+        if len(ae) == 0:
+            return {"n": 0, "mae": float("nan"), "acc_1d": float("nan"), "acc_2d": float("nan"), "acc_3d": float("nan")}
+        ae = np.asarray(ae, dtype=np.float64)
+        return {
+            "n": int(len(ae)),
+            "mae": float(ae.mean()),
+            "acc_1d": float((ae < 1.5).mean()),
+            "acc_2d": float((ae < 2.5).mean()),
+            "acc_3d": float((ae < 3.5).mean()),
+        }
+
     strategies = ["threshold", "cumulative", "bayesian"]
     all_detected = {}
     for strat in strategies:
@@ -233,6 +264,12 @@ def main():
     for strat in strategies:
         detected_ov = all_detected[strat]
         results_hybrid, results_lgb, results_oracle = [], [], []
+        # Collect anchor-day absolute errors across seeds, then pool to report.
+        anchor_errs = {
+            "lgb": {k: [] for k in anchors_all},
+            "hyb": {k: [] for k in anchors_all},
+            "ora": {k: [] for k in anchors_all},
+        }
 
         for seed in range(10):
             gss = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=seed)
@@ -282,6 +319,26 @@ def main():
                         pred_ora[i] = max(1.0, avg_lut - days_since)
             results_oracle.append(compute_metrics(pred_ora, y_test))
 
+            # Anchor-day evaluation (pre vs post) using LH ovulation day.
+            # rel = day_in_cycle - ov_true (both in "day-in-cycle index").
+            # We only count rows whose sgk has LH ovulation label.
+            ov_arr = np.array([lh_ov_dict.get(sgk, np.nan) for sgk in sgks], dtype=float)
+            valid = ~np.isnan(ov_arr)
+            rel_round = np.full(len(dics), 999999, dtype=int)
+            rel_round[valid] = np.rint(np.asarray(dics)[valid] - ov_arr[valid]).astype(int)
+
+            abs_err_lgb = np.abs(pred_lgb - y_test)
+            abs_err_hyb = np.abs(pred_det - y_test)
+            abs_err_ora = np.abs(pred_ora - y_test)
+
+            for k in anchors_all:
+                mask_k = valid & (rel_round == k)
+                if mask_k.sum() == 0:
+                    continue
+                anchor_errs["lgb"][k].append(abs_err_lgb[mask_k])
+                anchor_errs["hyb"][k].append(abs_err_hyb[mask_k])
+                anchor_errs["ora"][k].append(abs_err_ora[mask_k])
+
         def avg(results):
             return {k: np.mean([r[k] for r in results]) for k in results[0]}
 
@@ -291,6 +348,37 @@ def main():
         print(f"  Detected-ov hybrid:   MAE={hyb_a['mae']:.3f}  ±3d={hyb_a['acc_3d']:.1%}")
         print(f"  Oracle hybrid:        MAE={ora_a['mae']:.3f}  ±3d={ora_a['acc_3d']:.1%}")
         print(f"  Oracle vs LGB:        MAE={ora_a['mae']-lgb_a['mae']:+.3f}  ±3d={100*(ora_a['acc_3d']-lgb_a['acc_3d']):+.1f}pp")
+
+        # Print anchor-day breakdown (pooled across seeds).
+        print("  Anchor-day breakdown (pooled abs error across seeds)")
+        print("    Pre anchors:  ov-7, ov-3, ov-1")
+        for k in anchors_pre:
+            ae_lgb = np.concatenate(anchor_errs["lgb"][k]) if anchor_errs["lgb"][k] else np.array([])
+            ae_hyb = np.concatenate(anchor_errs["hyb"][k]) if anchor_errs["hyb"][k] else np.array([])
+            ae_ora = np.concatenate(anchor_errs["ora"][k]) if anchor_errs["ora"][k] else np.array([])
+            m_lgb = _metrics_from_abs_err(ae_lgb)
+            m_hyb = _metrics_from_abs_err(ae_hyb)
+            m_ora = _metrics_from_abs_err(ae_ora)
+            print(
+                f"    ov{k:>+3d}: "
+                f"LGB n={m_lgb['n']:>4d} MAE={m_lgb['mae']:.3f} ±3d={m_lgb['acc_3d']:.1%} | "
+                f"Hybrid n={m_hyb['n']:>4d} MAE={m_hyb['mae']:.3f} ±3d={m_hyb['acc_3d']:.1%} | "
+                f"Oracle n={m_ora['n']:>4d} MAE={m_ora['mae']:.3f} ±3d={m_ora['acc_3d']:.1%}"
+            )
+        print("    Post anchors: ov+2, ov+5, ov+10")
+        for k in anchors_post:
+            ae_lgb = np.concatenate(anchor_errs["lgb"][k]) if anchor_errs["lgb"][k] else np.array([])
+            ae_hyb = np.concatenate(anchor_errs["hyb"][k]) if anchor_errs["hyb"][k] else np.array([])
+            ae_ora = np.concatenate(anchor_errs["ora"][k]) if anchor_errs["ora"][k] else np.array([])
+            m_lgb = _metrics_from_abs_err(ae_lgb)
+            m_hyb = _metrics_from_abs_err(ae_hyb)
+            m_ora = _metrics_from_abs_err(ae_ora)
+            print(
+                f"    ov{k:>+3d}: "
+                f"LGB n={m_lgb['n']:>4d} MAE={m_lgb['mae']:.3f} ±3d={m_lgb['acc_3d']:.1%} | "
+                f"Hybrid n={m_hyb['n']:>4d} MAE={m_hyb['mae']:.3f} ±3d={m_hyb['acc_3d']:.1%} | "
+                f"Oracle n={m_ora['n']:>4d} MAE={m_ora['mae']:.3f} ±3d={m_ora['acc_3d']:.1%}"
+            )
 
     print(f"\n{'='*70}")
     print("  DONE")

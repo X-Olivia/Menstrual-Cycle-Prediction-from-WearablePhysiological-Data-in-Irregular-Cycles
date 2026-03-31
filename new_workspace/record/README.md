@@ -42,8 +42,16 @@ Reads base daily aggregates from `processed_data/sleep.csv`, mcPHASES raw tables
 1. `data_clean.py` → `processed_dataset/cycle_cleaned.csv`
 2. `ovulation_labels.py` → `cycle_cleaned_ov.csv`
 3. `wearable_signals.py` → `processed_dataset/signals/*.csv`
-4. (Optional) Build v4 daily features: run `python record/build_sleep_daily.py`, then `python record/build_features.py`. 
-5. `python record/oracle_luteal_countdown_experiment.py` 
+4. (Optional) Build v4 daily features: run `python record/build_sleep_daily.py`, then `python record/build_features.py`.
+5. `python record/oracle_luteal_countdown_experiment.py`
+
+### Evaluation (anchor-day split)
+
+The script reports, in addition to overall metrics, a breakdown of **remaining-days error** at LH anchor days:
+
+- Pre: `ov-7`, `ov-3`, `ov-1`
+- Post: `ov+2`, `ov+5`, `ov+10`
+Metrics (MAE and ±3d) are printed separately for `LightGBM only`, `Detected-ov hybrid`, and `Oracle hybrid`.
 
 ---
 
@@ -60,3 +68,12 @@ Reads base daily aggregates from `processed_data/sleep.csv`, mcPHASES raw tables
 
 1. `data_clean.py` → `ovulation_labels.py` → `wearable_signals.py`
 2. `python record/multisignal_ovulation_detection_and_menses_experiment.py` (from new_workspace)
+
+### Evaluation (anchor-day split)
+
+`multisignal_ovulation_detection_and_menses_experiment.py` now evaluates menstrual prediction **at specific LH anchor days** and prints **separate** metrics for:
+
+- Pre anchors: `ov-7`, `ov-3`, `ov-1`
+- Post anchors: `ov+2`, `ov+5`, `ov+10`
+The switch between calendar vs luteal countdown is decided at the anchor day (using the same countdown-enabled rule as the script).
+
