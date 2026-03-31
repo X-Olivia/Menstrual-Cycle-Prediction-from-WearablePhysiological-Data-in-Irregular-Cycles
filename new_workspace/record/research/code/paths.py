@@ -3,11 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 
-RESEARCH_DIR = Path(__file__).resolve().parent
+CODE_DIR = Path(__file__).resolve().parent
+RESEARCH_DIR = CODE_DIR.parent
 RECORD_DIR = RESEARCH_DIR.parent
 NEW_WS = RECORD_DIR.parent
 PIPELINE_DIR = RECORD_DIR / "experiment" / "multisignal_pipeline"
 
+DOCS_DIR = RESEARCH_DIR / "docs"
+METHODOLOGY_DIR = DOCS_DIR / "methodology"
+REPORTS_DIR = DOCS_DIR / "reports"
 RESULTS_DIR = RESEARCH_DIR / "results"
 SUBGROUP_DIR = RESULTS_DIR / "subgroup_tables"
 MANIFEST_DIR = RESULTS_DIR / "manifests"
@@ -36,5 +40,14 @@ L3_MANIFEST_JSON = MANIFEST_DIR / "l3_few_shot_manifest_v1.json"
 
 
 def ensure_research_dirs() -> None:
-    for path in (RESULTS_DIR, SUBGROUP_DIR, MANIFEST_DIR, BASELINE_DIR, PERSONALIZATION_DIR):
+    for path in (
+        DOCS_DIR,
+        METHODOLOGY_DIR,
+        REPORTS_DIR,
+        RESULTS_DIR,
+        SUBGROUP_DIR,
+        MANIFEST_DIR,
+        BASELINE_DIR,
+        PERSONALIZATION_DIR,
+    ):
         path.mkdir(parents=True, exist_ok=True)

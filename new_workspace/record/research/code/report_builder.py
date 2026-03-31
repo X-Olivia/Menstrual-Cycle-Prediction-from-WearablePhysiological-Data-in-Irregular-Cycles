@@ -9,11 +9,12 @@ from paths import (
     L1_RESULTS_CSV,
     L2_RESULTS_CSV,
     L3_RESULTS_CSV,
-    RESEARCH_DIR,
+    REPORTS_DIR,
+    ensure_research_dirs,
 )
 
 
-REPORT_PATH = RESEARCH_DIR / "BASELINE_AND_PERSONALIZATION_REPORT_v1.md"
+REPORT_PATH = REPORTS_DIR / "BASELINE_AND_PERSONALIZATION_REPORT_v1.md"
 
 
 def _load_results(path: Path, tag: str) -> pd.DataFrame:
@@ -151,12 +152,12 @@ def build_report() -> str:
     lines.append("")
     lines.append("This means detector personalization should not be assumed to be beneficial. In the current implementation, personalization is either neutral (`L1`) or harmful (`L2/L3`).")
     lines.append("")
-    lines.append("### 2.3 Current evidence supports selective wearable benefit, but not selective personalization benefit")
+    lines.append("### 2.3 Current evidence supports the wearable subgroup claim, but not a positive personalization claim")
     lines.append("")
-    lines.append("The current results support `H1` more clearly than `H2`.")
+    lines.append("The current results support the paper's primary wearable-benefit claim much more clearly than any positive personalization claim.")
     lines.append("")
-    lines.append("- `H1` is supported: wearable physiology helps selectively across irregularity profiles")
-    lines.append("- `H2` is not yet supported: current personalization does not improve harder subgroups")
+    lines.append("- primary claim supported: wearable physiology helps selectively across irregularity profiles")
+    lines.append("- secondary personalization claim not supported: current personalization does not improve harder subgroups and is not yet a positive finding")
     lines.append("")
     lines.append("## 3. Wearable Gain over Calendar by Subgroup")
     lines.append("")
@@ -211,7 +212,7 @@ def build_report() -> str:
     lines.append("")
     lines.append("### Q3. Where does personalization help?")
     lines.append("")
-    lines.append("At the current implementation stage, personalization does not help. This is itself an important result.")
+    lines.append("At the current implementation stage, personalization does not help. This is a meaningful negative result rather than a missing result.")
     lines.append("")
     lines.append("- `L1` is effectively neutral")
     lines.append("- `L2` and `L3` degrade the current baseline")
@@ -220,7 +221,7 @@ def build_report() -> str:
     lines.append("")
     lines.append("The paper can already support a strong claim that wearable physiology provides selective benefit across irregularity profiles.")
     lines.append("")
-    lines.append("However, the detector-personalization claim must remain provisional. The current code does not yet support a positive personalization result.")
+    lines.append("However, the detector-personalization claim must remain secondary and provisional. The current code does not yet support a positive personalization result.")
     lines.append("")
     lines.append("## 6. Methodological Cautions")
     lines.append("")
@@ -236,17 +237,18 @@ def build_report() -> str:
     lines.append("")
     lines.append("1. freeze subgroup reporting thresholds (`U_min`, `C_min`)")
     lines.append("2. keep the current wearable subgroup-baseline result as the main positive finding")
-    lines.append("3. redesign detector personalization before making stronger `H2` claims")
+    lines.append("3. redesign detector personalization before making any stronger personalization claims")
     lines.append("")
     lines.append("In practical terms, the current evidence says:")
     lines.append("")
-    lines.append("**wearable physiology already shows selective value; current detector personalization does not yet.**")
+    lines.append("**wearable physiology already shows selective value; current detector personalization is currently a negative or null finding rather than a positive contribution.**")
     lines.append("")
 
     return "\n".join(lines)
 
 
 def main() -> None:
+    ensure_research_dirs()
     text = build_report()
     REPORT_PATH.write_text(text, encoding="utf-8")
     print(REPORT_PATH)

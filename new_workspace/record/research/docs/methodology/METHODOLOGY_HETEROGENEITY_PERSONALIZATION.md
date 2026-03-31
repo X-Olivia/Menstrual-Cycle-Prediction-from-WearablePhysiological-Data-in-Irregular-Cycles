@@ -4,7 +4,7 @@
 
 This study does not aim to build a single universally optimal menstrual predictor. Its purpose is narrower and more clinically meaningful:
 
-**to test whether wearable physiology and detector personalization are uniformly useful, or whether their benefits depend on structured forms of menstrual irregularity under strict prefix prediction.**
+**to test whether wearable physiology provides selective benefit across structured forms of menstrual irregularity under strict prefix prediction, and to evaluate detector personalization as a secondary, provisional question rather than an assumed source of gain.**
 
 This framing treats menstrual prediction as a heterogeneity-sensitive problem rather than an average-case forecasting problem.
 
@@ -12,12 +12,12 @@ This framing treats menstrual prediction as a heterogeneity-sensitive problem ra
 
 The paper should be organised around one central question:
 
-**How do wearable physiology and detector personalization interact with structured menstrual irregularity under strict subject-wise, strict-prefix prediction?**
+**How does wearable physiology interact with structured menstrual irregularity under strict subject-wise, strict-prefix prediction, and does detector personalization add reliable value beyond that baseline?**
 
 This question can be answered through two concrete sub-questions:
 
 1. Do wearable physiological signals improve prediction equally across irregularity profiles, or mainly in some subgroups?
-2. Does detector personalization provide broad benefit, or does it mainly help harder irregular profiles?
+2. Does detector personalization provide any reliable benefit beyond the population wearable baseline, especially in harder irregular profiles?
 
 ## 3. Core Hypotheses
 
@@ -27,9 +27,9 @@ Only two main hypotheses should be carried by the paper.
 
 Wearable physiological signals improve prediction beyond calendar history, but the gain is not uniform across users. It depends on the type of irregularity.
 
-### H2. Personalization mainly helps harder subgroups, and mainly upstream
+### H2. Detector personalization is exploratory and must be empirically justified
 
-Detector personalization is expected to provide the largest benefit in harder irregular profiles, and this benefit is expected to arise primarily through improvements in ovulation detection rather than only through downstream menstrual countdown.
+Detector personalization is treated as a secondary research question. It should not be assumed to help. The study should instead test whether any personalization gain exists at all, whether it appears selectively in harder irregular profiles, and whether any such gain arises primarily through the detector rather than only through downstream menstrual countdown.
 
 ## 4. Task Formulation
 
@@ -45,7 +45,7 @@ It makes it possible to separate:
 - detector-side failure
 - downstream countdown-side failure
 
-This separation is central to the paper, because personalization may help one stage more than the other.
+This separation is central to the paper, because any future personalization gain may help one stage more than the other.
 
 ## 5. Evaluation Protocol
 
@@ -97,7 +97,7 @@ The paper should also report:
 - first-detection day
 - detection latency
 
-These metrics are necessary to determine whether personalization helps by improving the detector itself.
+These metrics are necessary to determine whether any future personalization gain helps by improving the detector itself.
 
 ## 6. Irregularity Taxonomy
 
@@ -146,6 +146,12 @@ However, this axis should be treated as a **secondary or sensitivity analysis**,
 The paper must define personalization operationally rather than conceptually.
 
 Personalization in this study refers to **detector personalization**, not primarily to personalized luteal countdown.
+
+At the current project stage, personalization should be framed as:
+
+- secondary to the wearable-vs-calendar subgroup finding
+- provisional rather than assumed to be beneficial
+- a source of possible negative findings as well as positive findings
 
 ### 7.1 Four personalization levels
 
@@ -221,8 +227,8 @@ Uses wearable signals under strict prefix constraints plus detector personalizat
 
 Purpose:
 
-- quantify whether personalization adds value
-- identify which irregularity profiles benefit most
+- test whether personalization adds any reliable value beyond the population wearable baseline
+- identify whether any gain appears selectively in harder irregularity profiles
 
 ## 9. Detector Architecture Recommendation
 
@@ -248,7 +254,7 @@ Compare:
 - Population wearable detector
 - Personalized detector levels `L1-L3`
 
-This establishes whether wearable signals and personalization help at all.
+This establishes whether wearable signals help at all, and provides the baseline against which personalization must be judged.
 
 ### Stage 2: single-axis subgroup analysis
 
@@ -307,9 +313,9 @@ This table should be the main answer to the research question.
 The paper should claim only the following:
 
 1. Wearable physiology is useful, but not equally useful for all irregular users.
-2. Detector personalization is not uniformly beneficial.
-3. Personalization gains are concentrated in some harder irregularity profiles.
-4. These gains arise mainly through the detector rather than only through downstream countdown refinement.
+2. Detector personalization should not be assumed to be beneficial.
+3. Any personalization benefit must be demonstrated empirically rather than assumed from detector complexity.
+4. Detector-side and countdown-side effects should be reported separately when personalization is evaluated.
 
 ## 13. What the Paper Should Not Claim
 
@@ -330,7 +336,7 @@ The next implementation steps should follow this order:
    - cycle-length level
    - cycle variability
 2. evaluate the current multisignal strict-prefix detector across those subgroup definitions
-3. implement detector personalization levels `L1-L3`
+3. implement detector personalization levels `L1-L3` as a secondary analysis
 4. compare subgroup-specific gains
 5. add ovulatory-status only as a secondary analysis
 
@@ -343,5 +349,5 @@ The paper’s contribution should be framed as follows:
 1. It reframes menstrual cycle prediction as a heterogeneity-sensitive problem.
 2. It evaluates structured irregularity instead of collapsing users into a single irregular category.
 3. It quantifies where wearable physiology improves prediction and where it does not.
-4. It tests whether detector personalization is broadly useful or mainly valuable for harder irregularity profiles.
+4. It tests whether detector personalization provides any reliable benefit, and whether any such benefit is concentrated in harder irregularity profiles.
 5. It does so under strict subject-wise and strict-prefix evaluation, reducing hindsight bias and improving methodological credibility.

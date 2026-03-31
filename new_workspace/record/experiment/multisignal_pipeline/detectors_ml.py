@@ -15,8 +15,10 @@ from core.localizer import (
     _precompute_prefix_localizer_payload,
     localize_ov_within_prefix,
     localize_ov_within_prefix_scored,
+    localize_ov_within_prefix_bayesian_scored,
     localizer_score_smooth_candidate,
     precompute_prefix_localizer_table,
+    precompute_prefix_bayesian_localizer_table,
 )
 from core.stabilization import apply_stabilization
 from data import (
@@ -362,6 +364,11 @@ def prefix_phase_classify_loso(
     localizer_smooth_window_m=0,
     phase_ensemble_models=None,
     localizer_lookback_fusion=None,
+    use_bayesian_localizer=False,
+    prior_mean_frac=0.575,
+    prior_std_frac=0.10,
+    prior_weight=2.0,
+    bayesian_prior_overrides=None,
 ):
     """
     Prefix-valid phase/event detection:
@@ -409,6 +416,34 @@ def prefix_phase_classify_loso(
         if shift_lb not in lbs:
             shift_lb = lbs[len(lbs) // 2]
         shift_payload = loc_payloads[lbs.index(shift_lb)]
+    elif use_bayesian_localizer:
+        localizer_payload = precompute_prefix_bayesian_localizer_table(
+            cs,
+            localizer_basis,
+            lookback_localize,
+            localizer_cache_tag,
+            prior_mean_frac=prior_mean_frac,
+            prior_std_frac=prior_std_frac,
+            prior_weight=prior_weight,
+        )
+        localizer_table = dict(localizer_payload["localizer_table"])
+        score_table = dict(localizer_payload["score_table"])
+        shift_table = dict(localizer_payload["shift_table"])
+        if bayesian_prior_overrides:
+            from core.localizer import localize_ov_within_prefix_bayesian_scored, _resolve_localizer_spec
+            loc_sigs, loc_invs = _resolve_localizer_spec(localizer_basis)
+            for sgk, (m, s) in bayesian_prior_overrides.items():
+                if sgk not in cs: continue
+                n = int(cs[sgk]["cycle_len"])
+                seq = [None] * n
+                for day_idx in range(n):
+                    cand = localize_ov_within_prefix_bayesian_scored(
+                        cs[sgk], day_idx + 1, loc_sigs, loc_invs,
+                        lookback_localize, m, s, prior_weight
+                    )
+                    if cand["ov_est"] is not None:
+                        seq[day_idx] = cand["ov_est"]
+                localizer_table[sgk] = seq
     else:
         localizer_payload = _precompute_prefix_localizer_payload(
             cs,
@@ -731,6 +766,31 @@ def build_prefix_ml_features(
         for lag in FEATURE_AUTOCORR_LAGS:
             ac = s.autocorr(lag=lag)
             feats[f"{name}_ac{lag}"] = float(ac) if np.isfinite(ac) else 0.0
+
+        # NEW: Follicular Baseline Normalization (Sprint Stage 1)
+        # Using Days 1-7 as individual follicular baseline.
+        follicular_window = t[:7]
+        if len(follicular_window) >= 3:
+            f_mean = float(np.mean(follicular_window))
+            f_std = float(np.std(follicular_window))
+            f_std = max(f_std, 0.01) # floor
+            
+            feats[f"{name}_fmean"] = f_mean
+            feats[f"{name}_fstd"] = f_std
+            feats[f"{name}_rel_last"] = float(t[-1]) - f_mean
+            feats[f"{name}_zscore_last"] = (float(t[-1]) - f_mean) / f_std
+            
+            # Evidence of shift: comparison of recent window vs follicular baseline
+            recent_window_data = t[-min(5, prefix_len):]
+            feats[f"{name}_recent_vs_fmean"] = float(np.mean(recent_window_data)) - f_mean
+            feats[f"{name}_recent_zscore"] = (float(np.mean(recent_window_data)) - f_mean) / f_std
+        else:
+            feats[f"{name}_fmean"] = 0.0
+            feats[f"{name}_fstd"] = 0.0
+            feats[f"{name}_rel_last"] = 0.0
+            feats[f"{name}_zscore_last"] = 0.0
+            feats[f"{name}_recent_vs_fmean"] = 0.0
+            feats[f"{name}_recent_zscore"] = 0.0
 
         std_t = np.std(t)
         if std_t > 1e-8:

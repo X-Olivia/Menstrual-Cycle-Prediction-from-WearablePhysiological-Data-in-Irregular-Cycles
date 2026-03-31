@@ -128,6 +128,103 @@ def localize_ov_within_prefix_scored(
     }
 
 
+def localize_ov_within_prefix_bayesian_scored(
+    data,
+    prefix_len,
+    sigs,
+    inverts=None,
+    lookback_localize=None,
+    prior_mean_frac=0.575,
+    prior_std_frac=0.10,
+    prior_weight=2.0,
+):
+    """
+    Bayesian-regularized localizer.
+    CombinedScore(d) = t_stat(d) + prior_weight * log_prior(d)
+    """
+    if prefix_len < MIN_CYCLE_LEN_FOR_DETECTION:
+        return {"ov_est": None, "score": None, "shift": None}
+    if inverts is None:
+        inverts = [False] * len(sigs)
+
+    # 1. Evidence (Signal Fusion)
+    valid_ts = []
+    for sk, inv in zip(sigs, inverts):
+        raw = data.get(sk)
+        if raw is None:
+            continue
+        prefix_raw = np.asarray(raw[:prefix_len], dtype=float)
+        if np.isnan(prefix_raw).all():
+            continue
+        t = _clean(prefix_raw, sigma=PREFIX_BENCHMARK_ML_SIGMA)
+        if inv:
+            t = -t
+        std_t = np.std(t)
+        if std_t > 1e-8:
+            valid_ts.append((t - np.mean(t)) / std_t)
+        else:
+            valid_ts.append(np.zeros_like(t))
+
+    if not valid_ts:
+        return {"ov_est": None, "score": None, "shift": None}
+
+    fused = np.mean(valid_ts, axis=0)
+
+    # 2. Search Range
+    search_lo = MIN_DETECTION_DAY
+    if lookback_localize is not None:
+        search_lo = max(MIN_DETECTION_DAY, prefix_len - int(lookback_localize))
+    search_hi = prefix_len - MAX_RIGHT_MARGIN_DAYS
+    if search_hi <= search_lo:
+        return {"ov_est": None, "score": None, "shift": None}
+
+    # 3. Bayesian Prior (Historical)
+    # We map fractions to absolute days relative to cycle start.
+    hist_clen = float(data.get("hist_cycle_len", 28.0))
+    prior_mean_day = prior_mean_frac * hist_clen
+    prior_std_day = prior_std_frac * hist_clen
+
+    # 4. Search and Combine
+    best_sp = None
+    best_posterior = -np.inf
+    best_stat = -np.inf
+    best_shift = None
+
+    for sp in range(search_lo, search_hi):
+        left = fused[:sp]
+        right = fused[sp:prefix_len]
+        if len(left) < 2 or len(right) < 2:
+            continue
+        try:
+            stat, _ = ttest_ind(right, left, alternative="greater")
+        except Exception:
+            continue
+        if np.isnan(stat):
+            continue
+
+        # log_prior = -0.5 * ((sp - mu)/sigma)^2
+        # (ignoring constant normalization term as we only care about argmax)
+        log_prior = -0.5 * ((float(sp) - prior_mean_day) ** 2) / (prior_std_day ** 2)
+
+        posterior = float(stat) + float(prior_weight) * log_prior
+
+        if posterior > best_posterior:
+            best_posterior = posterior
+            best_stat = float(stat)
+            best_sp = int(sp)
+            best_shift = float(np.mean(right) - np.mean(left))
+
+    if best_sp is None:
+        return {"ov_est": None, "score": None, "shift": None}
+
+    return {
+        "ov_est": int(best_sp),
+        "score": float(best_stat),
+        "shift": float(best_shift if best_shift is not None else 0.0),
+        "posterior": float(best_posterior),
+    }
+
+
 def localize_ov_within_prefix(
     data,
     prefix_len,
@@ -208,6 +305,78 @@ def _precompute_prefix_localizer_payload(cs, sigs, lookback_localize, cache_tag)
 def precompute_prefix_localizer_table(cs, sigs, lookback_localize, cache_tag):
     payload = _precompute_prefix_localizer_payload(cs, sigs, lookback_localize, cache_tag)
     return payload["localizer_table"]
+
+
+def precompute_prefix_bayesian_localizer_table(
+    cs,
+    sigs,
+    lookback_localize,
+    cache_tag,
+    prior_mean_frac=0.575,
+    prior_std_frac=0.10,
+    prior_weight=2.0,
+):
+    """Precompute Bayesian localizer results for all cycles/days."""
+    safe_tag = cache_tag.replace("+", "plus").replace("/", "_")
+    lookback_tag = "full" if lookback_localize is None else str(int(lookback_localize))
+    cache_path = PROCESSED / "cache" / (
+        f"prefix_bayesian_localizer_{safe_tag}_lb{lookback_tag}_pm{prior_mean_frac}_ps{prior_std_frac}_pw{prior_weight}_{PHASECLS_LOCALIZER_CACHE_VERSION}.pkl"
+    )
+    if cache_path.exists():
+        try:
+            with open(cache_path, "rb") as f:
+                payload = pickle.load(f)
+            # Basic version check
+            if payload.get("version") == PHASECLS_LOCALIZER_CACHE_VERSION:
+                return payload
+        except Exception:
+            pass
+
+    localizer_sigs, localizer_inverts = _resolve_localizer_spec(sigs)
+    localizer_table = {}
+    score_table = {}
+    shift_table = {}
+    post_table = {}
+
+    for sgk, data in cs.items():
+        n = int(data["cycle_len"])
+        seq = [None] * n
+        score_seq = [None] * n
+        shift_seq = [None] * n
+        post_seq = [None] * n
+        for day_idx in range(n):
+            cand = localize_ov_within_prefix_bayesian_scored(
+                data,
+                prefix_len=day_idx + 1,
+                sigs=localizer_sigs,
+                inverts=localizer_inverts,
+                lookback_localize=lookback_localize,
+                prior_mean_frac=prior_mean_frac,
+                prior_std_frac=prior_std_frac,
+                prior_weight=prior_weight,
+            )
+            if cand["ov_est"] is not None:
+                seq[day_idx] = int(cand["ov_est"])
+                score_seq[day_idx] = float(cand["score"])
+                shift_seq[day_idx] = float(cand["shift"])
+                post_seq[day_idx] = float(cand["posterior"])
+        localizer_table[sgk] = seq
+        score_table[sgk] = score_seq
+        shift_table[sgk] = shift_seq
+        post_table[sgk] = post_seq
+
+    payload = {
+        "version": PHASECLS_LOCALIZER_CACHE_VERSION,
+        "localizer_table": localizer_table,
+        "score_table": score_table,
+        "shift_table": shift_table,
+        "post_table": post_table,
+    }
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(cache_path, "wb") as f:
+        pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+    print(f"  Rebuilt prefix Bayesian localizer table cache: {cache_path}")
+    return payload
 
 
 def localizer_score_smooth_candidate(localizer_seq, score_seq, day_idx, window_m):

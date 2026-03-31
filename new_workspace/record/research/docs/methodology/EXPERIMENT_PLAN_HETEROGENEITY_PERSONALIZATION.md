@@ -8,8 +8,8 @@ The objective is not to maximize one aggregate score as quickly as possible. The
 
 1. which irregularity profiles are hardest
 2. where wearable physiology improves prediction over calendar history
-3. where detector personalization adds value
-4. whether personalization gains occur mainly in the detector rather than downstream countdown
+3. whether detector personalization adds any reliable value beyond the population wearable baseline
+4. if such gains exist, whether they occur mainly in the detector rather than downstream countdown
 
 ## 2. Fixed Principles
 
@@ -47,6 +47,11 @@ The research design has three main axes.
 - `L1 Zero-shot history-calibrated`
 - `L2 One-shot personalized`
 - `L3 Few-shot personalized`
+
+Note:
+
+- personalization is a secondary analysis axis
+- the primary positive claim of the paper should not depend on `L1-L3` outperforming `L0`
 
 ### 3.3 Irregularity subgroup regime
 
@@ -189,7 +194,7 @@ A versioned subgroup definition file to be reused across all later experiments.
 
 ### Goal
 
-Answer whether wearable physiology helps different irregularity profiles differently, before personalization is introduced.
+Answer whether wearable physiology helps different irregularity profiles differently, before personalization is introduced. This is the main positive analysis track of the paper.
 
 ### Comparisons
 

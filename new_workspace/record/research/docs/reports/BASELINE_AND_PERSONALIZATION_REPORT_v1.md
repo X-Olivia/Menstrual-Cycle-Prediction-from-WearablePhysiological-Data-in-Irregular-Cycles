@@ -43,12 +43,12 @@ At this stage:
 
 This means detector personalization should not be assumed to be beneficial. In the current implementation, personalization is either neutral (`L1`) or harmful (`L2/L3`).
 
-### 2.3 Current evidence supports selective wearable benefit, but not selective personalization benefit
+### 2.3 Current evidence supports the wearable subgroup claim, but not a positive personalization claim
 
-The current results support `H1` more clearly than `H2`.
+The current results support the paper's primary wearable-benefit claim much more clearly than any positive personalization claim.
 
-- `H1` is supported: wearable physiology helps selectively across irregularity profiles
-- `H2` is not yet supported: current personalization does not improve harder subgroups
+- primary claim supported: wearable physiology helps selectively across irregularity profiles
+- secondary personalization claim not supported: current personalization does not improve harder subgroups and is not yet a positive finding
 
 ## 3. Wearable Gain over Calendar by Subgroup
 
@@ -122,7 +122,7 @@ They help most where Calendar assumptions are structurally weakest:
 
 ### Q3. Where does personalization help?
 
-At the current implementation stage, personalization does not help. This is itself an important result.
+At the current implementation stage, personalization does not help. This is a meaningful negative result rather than a missing result.
 
 - `L1` is effectively neutral
 - `L2` and `L3` degrade the current baseline
@@ -131,7 +131,7 @@ At the current implementation stage, personalization does not help. This is itse
 
 The paper can already support a strong claim that wearable physiology provides selective benefit across irregularity profiles.
 
-However, the detector-personalization claim must remain provisional. The current code does not yet support a positive personalization result.
+However, the detector-personalization claim must remain secondary and provisional. The current code does not yet support a positive personalization result.
 
 ## 6. Methodological Cautions
 
@@ -147,8 +147,8 @@ Instead, it should be to:
 
 1. freeze subgroup reporting thresholds (`U_min`, `C_min`)
 2. keep the current wearable subgroup-baseline result as the main positive finding
-3. redesign detector personalization before making stronger `H2` claims
+3. redesign detector personalization before making any stronger personalization claims
 
 In practical terms, the current evidence says:
 
-**wearable physiology already shows selective value; current detector personalization does not yet.**
+**wearable physiology already shows selective value; current detector personalization is currently a negative or null finding rather than a positive contribution.**

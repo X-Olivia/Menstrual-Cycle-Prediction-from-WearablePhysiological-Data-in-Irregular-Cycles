@@ -206,7 +206,10 @@ def _print_header(mode):
     print(
         "  Fast mode candidates: Calendar, Oracle-prefix, "
         "Rule-TempOnly-ftt_prefix, Rule-HROnly-ftt_prefix, "
-        "PhaseCls-HROnly, PhaseCls-TempOnly, PhaseCls-Temp+HR, "
+        "PhaseCls-HROnly, PhaseCls-TempOnly, PhaseCls-Temp+HR+HRV, "
+        "PhaseCls-AllSignals, PhaseCls-Temp+HR[Bayesian], "
+        "PhaseCls-Temp+HR[BayesianPersonalized], "
+        "PhaseCls-ENS-Temp+HR[Champion-BayesianPersonalized], "
+        "PhaseCls-Temp+HR[RF-baseline], PhaseCls-ENS-Temp+HR[Champion], "
         "PhaseCls-Temp+HR[EvidenceSticky], RuleState-Temp+HR"
     )
-

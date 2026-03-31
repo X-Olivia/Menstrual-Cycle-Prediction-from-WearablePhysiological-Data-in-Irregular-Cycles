@@ -81,7 +81,7 @@ PHASECLS_LOCALIZER_OVERRIDES = {
 }
 
 PHASECLS_MODEL_TYPES = ["rf"]
-PREFIX_CACHE_VERSION = "phasecls_v3"
+PREFIX_CACHE_VERSION = "phasecls_v4_follicular"
 
 PREFIX_SINGLE_SIGNAL_SPECS = [
     ("NT", "nightly_temperature", False),

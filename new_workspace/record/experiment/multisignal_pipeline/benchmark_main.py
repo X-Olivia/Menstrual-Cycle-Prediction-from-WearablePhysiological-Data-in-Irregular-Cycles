@@ -435,6 +435,9 @@ def _phase_candidate(
     localizer_lookback_fusion=None,
     localizer_smooth_window_m=0,
     monotone_back_margin=None,
+    use_bayesian_localizer=False,
+    prior_weight=2.0,
+    bayesian_prior_overrides=None,
 ):
     sigs = _group_lookup()[group_name]
     localizer_sigs = (
@@ -485,6 +488,9 @@ def _phase_candidate(
             localizer_smooth_window_m=localizer_smooth_window_m,
             phase_ensemble_models=phase_ensemble_models,
             localizer_lookback_fusion=localizer_lookback_fusion,
+            use_bayesian_localizer=use_bayesian_localizer,
+            prior_weight=prior_weight,
+            bayesian_prior_overrides=bayesian_prior_overrides,
         )
 
     return {
@@ -558,7 +564,17 @@ def _rule_state_candidate(
     }
 
 
-def _fast_candidate_specs():
+def _fast_candidate_specs(bayesian_overrides=None):
+    """Fast benchmark pool.
+
+    This list intentionally mixes:
+    - mainline shipped comparators
+    - stronger non-personalized Bayesian variants
+    - personalized Bayesian comparators retained for explicit comparison
+
+    The personalized candidates are named explicitly with `BayesianPersonalized`
+    so their status is visible in logs and downstream reports.
+    """
     rule_groups = _rule_group_lookup()
     return [
         _rule_candidate(
@@ -575,6 +591,32 @@ def _fast_candidate_specs():
         ),
         _phase_candidate("HROnly", model_type="rf"),
         _phase_candidate("TempOnly", model_type="rf"),
+        _phase_candidate("Temp+HR+HRV", model_type="rf"),
+        _phase_candidate("AllSignals", model_type="rf"),
+        _phase_candidate(
+            "Temp+HR",
+            model_type="rf",
+            use_bayesian_localizer=True,
+            prior_weight=2.0,
+            name_suffix="[Bayesian]",
+        ),
+        _phase_candidate(
+            "Temp+HR",
+            model_type="rf",
+            use_bayesian_localizer=True,
+            prior_weight=2.0,
+            bayesian_prior_overrides=bayesian_overrides,
+            name_suffix="[BayesianPersonalized]",
+        ),
+        _phase_candidate(
+            "Temp+HR",
+            model_type="rf",
+            phase_ensemble_models=PHASECLS_PHASE_ENSEMBLE_MODELS,
+            use_bayesian_localizer=True,
+            prior_weight=2.0,
+            bayesian_prior_overrides=bayesian_overrides,
+            name_suffix="[Champion-BayesianPersonalized]",
+        ),
         _phase_candidate("Temp+HR", model_type="rf", name_suffix="[RF-baseline]"),
         _phase_candidate(
             "Temp+HR",
@@ -605,7 +647,7 @@ def _fast_candidate_specs():
     ]
 
 
-def _full_candidate_specs():
+def _full_candidate_specs(bayesian_overrides=None):
     specs = []
     for short_name, sig_key, invert in PREFIX_SINGLE_SIGNAL_SPECS:
         specs.append(
@@ -691,10 +733,11 @@ def _full_candidate_specs():
     return specs
 
 
-def _candidate_specs(mode):
+def _candidate_specs(mode="fast", bayesian_overrides=None):
     if mode == "fast":
-        return _fast_candidate_specs()
-    return _full_candidate_specs()
+        return _fast_candidate_specs(bayesian_overrides=bayesian_overrides)
+    return _full_candidate_specs(bayesian_overrides=bayesian_overrides)
+
 
 
 def _evaluate_candidate(cs, lh, subj_order, labeled, quality, spec):
@@ -1027,10 +1070,42 @@ def _evaluate_baselines(cs, lh, subj_order, labeled, quality):
         },
     )
 
-def run_prefix_benchmark(cs, lh, subj_order, labeled, quality_subset, mode):
+def _get_bayesian_prior_overrides(cs, lh, subj_order):
+    """Build per-cycle prior overrides for explicit personalized comparators only."""
+    import sys
+    from pathlib import Path
+    research_code_path = Path(__file__).resolve().parents[2] / "research" / "code"
+    if str(research_code_path) not in sys.path:
+        sys.path.append(str(research_code_path))
+    
+    try:
+        from personalization import build_zero_shot_calibration_table, L1Config
+    except ImportError:
+        # Fallback to absolute FYP root based pathing
+        fyp_root = Path(__file__).resolve().parents[4]
+        alt_path = fyp_root / "new_workspace" / "record" / "research" / "code"
+        if str(alt_path) not in sys.path:
+            sys.path.append(str(alt_path))
+        from personalization import build_zero_shot_calibration_table, L1Config
+
+    cfg = L1Config()
+    cal_df = build_zero_shot_calibration_table(cs, lh, subj_order, cfg)
+
+    overrides = {}
+    for row in cal_df.itertuples():
+        # Map sgk to (mean_frac, std_frac)
+        # build_zero_shot_calibration_table puts these in the df
+        if np.isfinite(row.ov_frac_prior_mean):
+            overrides[row.small_group_key] = (row.ov_frac_prior_mean, row.ov_frac_prior_std)
+    return overrides
+
+
+def run_prefix_benchmark(cs, lh, subj_order, labeled, quality_subset, mode="fast"):
     """Evaluate main candidate grid + Oracle/Calendar baselines (prints to stdout)."""
+    overrides = _get_bayesian_prior_overrides(cs, lh, subj_order)
     candidate_rows = []
-    for spec in _candidate_specs(mode):
+    for spec in _candidate_specs(mode, bayesian_overrides=overrides):
+
         candidate_rows.append(
             _evaluate_candidate(cs, lh, subj_order, labeled, quality_subset, spec)
         )

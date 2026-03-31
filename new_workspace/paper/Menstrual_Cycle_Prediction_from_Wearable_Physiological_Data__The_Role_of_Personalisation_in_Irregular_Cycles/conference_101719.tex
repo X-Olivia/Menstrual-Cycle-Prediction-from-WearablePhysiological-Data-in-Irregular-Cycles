@@ -6,15 +6,25 @@
 \usepackage{algorithmic}
 \usepackage{graphicx}
 \usepackage{textcomp}
+\usepackage[
+    backend=biber,
+    style=numeric,
+    sorting=none,
+    maxnames=99,        % citation 中显示全部作者
+    maxbibnames=99,     % bibliography 中显示全部作者
+    minnames=99         % 禁止触发 et al.
+]{biblatex}
+\addbibresource{.bib}
 \usepackage{xcolor}
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
 
-\title{Conference Paper Title*\\
+\title{Menstrual Cycle Prediction from Wearable Physiological Data:
+The Role of Personalisation in Irregular Cycles\\
 {\footnotesize \textsuperscript{*}Note: Sub-titles are not captured in Xplore and
 should not be used}
-\thanks{Identify applicable funding agency here. If none, delete this.}
+
 }
 
 \author{\IEEEauthorblockN{1\textsuperscript{st} Given Name Surname}
@@ -57,51 +67,35 @@ email address or ORCID}
 \maketitle
 
 \begin{abstract}
-This document is a model and instructions for \LaTeX.
-This and the IEEEtran.cls file define the components of your paper [title, text, heads, etc.]. *CRITICAL: Do Not Use Symbols, Special Characters, Footnotes, 
-or Math in Paper Title or Abstract.
+
+
+( I will add it when I finish other parts.)
 \end{abstract}
 
 \begin{IEEEkeywords}
-component, formatting, style, styling, insert
+menstrual cycle prediction, wearable physiological data, personalised modelling, cycle irregularity, digital health
 \end{IEEEkeywords}
 
 \section{Introduction}
+Accurate prediction of menstrual cycle events, particularly menstruation onset and ovulation timing, is important for symptom management and broader menstrual health assessment. However, the menstrual cycle is not adequately represented by a fixed-length pattern commonly idealised as 28 days \cite{bull2019realworld,grieger2020global}. Large-scale analyses of self-tracked data have shown substantial variation in cycle length, phase duration, and between-cycle consistency, and have also shown that ovulation does not reliably occur at the cycle midpoint \cite{symul2019assessment,bull2019realworld,li2020characterizing}. Traditional calendar-based approaches therefore inherit a structural limitation: they rely on historical averages and assumptions of regularity that are often least appropriate for the users who most need accurate prediction, especially users with irregular cycles. Although self-tracked menstrual records remain affected by incomplete adherence, missing observations, and heterogeneous tracking behaviour \cite{symul2019assessment,li2021predictive,symul2022labeling}, large app-based cohorts have consistently shown that cycle variability is not a marginal phenomenon but a central characteristic of menstrual health \cite{li2020characterizing,bull2019realworld}. These findings suggest that irregularity merits explicit consideration in real-world menstrual cycle prediction, rather than being treated only as residual noise around an otherwise regular pattern.
 
-Consumer menstrual tracking applications are widely used for estimating cycle timing, anticipating symptoms, and supporting fertility awareness. In principle, wearable devices offer a richer alternative to calendar-only tracking because they provide continuous, low-effort measurements of physiological signals that vary across the cycle, such as peripheral temperature, heart rate, heart rate variability, respiratory rate, and sleep-related measures [1], [2]. However, the practical value of wearable-based menstrual forecasting remains constrained by substantial between-subject and within-subject variability. Large-scale real-world data have shown that menstrual cycles are not uniformly regular: follicular phase length varies considerably, while luteal phase length is comparatively stable, implying that cycle timing is strongly affected by variation around ovulation rather than by a fixed calendar rule [3]. Recent wearable studies have reported encouraging performance for ovulation-related detection, yet these results are often obtained under specific reference standards, selected cohorts, or broader detection windows rather than under strict new-user prediction settings [4], [5].
+Wearable sensing is relevant here because it provides physiological information beyond calendar history. Prior studies and a recent systematic review suggest that temperature, heart rate, heart rate variability, respiratory measures, and related signals can support cycle-phase or fertile-window inference, and may outperform calendar-based or self-measured temperature approaches in some settings \cite{goodale2019wearable,maijala2019nocturnal,yu2022tracking,thigpen2025oura,luo2025prediction,kilungeja2025machine,masuda2025machine,shi2026diagnostic}. Even so, reported performance is commonly summarised by aggregate accuracy or mean error, and the underlying sources of failure are often left under-examined. Several studies note degraded performance in irregular cycles, but irregularity is usually handled as a single broad category rather than as a structured property of the user or cycle \cite{yu2022tracking,thigpen2025oura,luo2025prediction,shi2026diagnostic}. Irregularity does not represent a single condition or pattern. Across users, it may reflect different underlying clinical states, and across cycles, it may appear as consistently shifted cycle lengths, substantial cycle-to-cycle variability, or both \cite{balen2024figo,pena2018majority,bull2019realworld,li2020characterizing}. What remains unclear is whether the gains from wearable physiological signals and user-specific history are broadly shared across irregular users, or whether they are concentrated in particular irregularity patterns. Existing evaluations rarely frame this question explicitly, often reporting aggregate performance or treating irregular cycles as a single category \cite{yu2022tracking,luo2025prediction,shi2026diagnostic}. As a result, the conditions under which wearable signals and personal history materially reduce prediction error remain insufficiently understood.
 
-These observations expose a methodological gap. Much of the recent literature has focused on whether wearable signals can improve cycle-related inference beyond calendar methods, but less attention has been paid to \emph{for whom} such improvement occurs and \emph{how much} of the gain comes from subject-specific history rather than from genuinely generalisable population-level structure. This question is particularly important for irregular cycles. In a recent validation study, the Oura physiology-based method substantially outperformed the calendar method overall, while the calendar baseline deteriorated markedly in users with irregular cycles and the physiology-based method also showed reduced accuracy in abnormally long cycles [4]. Likewise, recent large-scale and review-based evidence suggests that wearable technologies are more reliable for detecting ovulation within a surrounding window than for exact day-level estimation, and that study design, reference standard, and risk of bias materially affect reported accuracy [2], [5]. Together, these findings suggest that irregularity is not merely a nuisance variable: it may instead define the conditions under which population models fail and personalised approaches become most valuable.
-
-This paper therefore studies menstrual forecasting through the lens of cycle irregularity and personalisation. Rather than proposing a highly complex forecasting architecture, we ask two more basic questions. First, does increasing cycle irregularity systematically degrade the performance of a population model? Second, does personalisation preferentially benefit users with more irregular cycles? These questions are motivated both by physiology and by deployment. If irregularity reflects largely idiosyncratic but learnable structure, then even limited subject history may yield substantial gains. If, by contrast, irregularity behaves primarily as irreducible noise, then personalisation may offer only modest improvement and reported performance gains under relaxed evaluation settings should be interpreted cautiously. The distinction is important not only for menstrual forecasting, but also for wearable digital health more broadly, where many prediction tasks involve heterogeneous physiological time series and sparse subject-specific histories.
-
-To investigate these questions, we use the mcPHASES dataset, a small hormone-labelled wearable dataset comprising 42 participants and [X] cycles. Building on the data-processing perspective developed in the interim stage of this project, we construct a leakage-aware pipeline that combines cycle-history variables with day-level physiological features derived from wrist temperature, heart rate, heart rate variability, respiratory rate, and sleep [6]. We then compare population-only and personalised settings under strict subject-wise evaluation, and stratify results by user-level cycle irregularity. In particular, we analyse 0-shot, 1-shot, and few-shot personalisation settings in order to quantify how quickly subject-specific history becomes useful. Our primary results are reported as mean absolute error and window-based accuracy, with the main findings left for Section IV: under strict evaluation, population performance decreases with increasing irregularity [placeholder], while the gain from personalisation is [placeholder] and is most pronounced in [placeholder].
-
-The contributions of this paper are threefold. First, we present a strict subject-wise evaluation protocol for wearable-based menstrual forecasting on a small hormone-labelled dataset, designed to separate generalisation from subject adaptation. Second, we quantify the interaction between cycle irregularity and personalisation, asking whether the benefit of subject-specific history is concentrated in more irregular users. Third, we provide an empirical analysis of few-shot personalisation under realistic data constraints, showing how forecasting performance changes as limited cycle history becomes available. The remainder of the paper is organised as follows. Section II reviews related work on calendar-based prediction, wearable ovulation inference, and personalised cycle modelling. Section III describes the dataset, preprocessing, irregularity definition, and evaluation protocol. Section IV presents experimental results. Section V concludes the paper.
+Using \textit{mcPHASES}, a recently released PhysioNet dataset that combines wearable, hormonal, and self-reported menstrual health observations \cite{lin2025mcphases}, we investigate how prediction performance changes across irregularity profiles and how much benefit is obtained from incorporating user-specific history. We ask which users benefit, under what form of irregularity, and whether personalisation is uniformly useful or mainly valuable in harder cases. To address these questions, we adopt a strict subject-wise evaluation protocol and compare population-level prediction with zero-shot, one-shot, and few-shot personalised settings. More broadly, the paper reframes menstrual cycle prediction as a heterogeneity-sensitive problem and evaluates distinct forms of irregularity rather than collapsing them into a single regular-versus-irregular dichotomy.
 \section{Related Work}
 
-\subsection{Calendar-based and statistical cycle prediction}
+\subsection{Calendar-based and self-tracked cycle prediction}
 
-Early computational approaches to menstrual-cycle prediction primarily relied on bleeding records and calendar extrapolation. Many commercial applications implement simple heuristics such as rolling averages of previous cycle lengths or probabilistic forecasts based on historical intervals [1]. More principled statistical models have also been proposed. For example, generative and hierarchical Bayesian approaches have been used to model individual cycle-length distributions and provide calibrated uncertainty estimates for next-cycle onset prediction [2]. Hidden semi-Markov models have further been applied to infer latent cycle phases from self-tracked menstrual data [3].
+Calendar-based and self-tracked approaches form an important baseline family for menstrual event prediction. Early evaluations of commercial websites and smartphone applications showed that fertile-window and ovulation estimates varied substantially across tools, and that many consumer systems relied on simplified cycle-length assumptions rather than physiological markers \cite{setton2016accuracy,moglia2016evaluation,duane2016performance}. At larger scale, app-based self-tracking records have nevertheless proved useful for characterising population-level menstrual patterns, including variation in cycle length, phase timing, and cycle-to-cycle consistency \cite{symul2019assessment,bull2019realworld,grieger2020global,li2020characterizing}. This line of work has also made clear that adherence, missingness, and reporting behaviour are not peripheral nuisances but part of the modelling problem itself \cite{li2021predictive,symul2022labeling}. Existing next-cycle prediction methods in this family therefore combine cycle-history information with adherence-aware modelling or latent-state labelling \cite{li2021predictive,symul2022labeling}. These approaches provide strong and practical baselines, but they remain largely dependent on historical and self-reported information.
 
-These calendar-based approaches capture population-level and subject-level cycle-length statistics but do not incorporate within-cycle physiological information. As a result, their predictive accuracy typically decreases when cycle length is highly variable or when ovulation timing deviates from historical patterns. Large-scale observational analyses have shown that real-world menstrual cycles exhibit substantial variability, particularly in the follicular phase, which limits the reliability of purely calendar-based predictions [4]. This limitation has motivated the exploration of wearable physiological sensing as an additional source of information.
+\subsection{Wearable physiology for menstrual event inference}
 
-\subsection{Wearable physiology for cycle and ovulation inference}
+A second line of work uses wearable sensing to access physiological signals that vary across the cycle under free-living conditions. Prior studies have examined skin or wrist temperature, heart rate, heart-rate variability, respiratory rate, and related nocturnal features for tasks including fertile-window detection, cycle-phase identification, ovulation inference, and menstruation prediction \cite{goodale2019wearable,maijala2019nocturnal,alzueta2022tracking,jasinski2024cardiovascular,yu2022tracking}. This direction is motivated in part by evidence that the fertile window is broader and less predictable than simple midpoint heuristics suggest \cite{wilcox2000fertilewindow}. Overall, wearable-based studies suggest that physiology-informed models can improve upon calendar-only or single-signal baselines in some settings \cite{goodale2019wearable,yu2022tracking}. However, this literature remains difficult to compare directly because studies differ in cohort design, reference standard, prediction window, and reported metric. Reported gains are also usually summarised through aggregate accuracy or mean error, rather than through subgroup-specific improvements or failure modes.
 
-Recent work has investigated whether physiological signals recorded by wearable devices can improve menstrual-cycle inference. Peripheral skin temperature, heart rate, heart rate variability, respiratory rate, and sleep-related variables all show measurable changes across the menstrual cycle due to hormonal fluctuations [5]. Machine learning models have therefore been applied to wearable datasets in order to detect ovulation, identify cycle phases, or predict the onset of the next cycle [6], [7].
+\subsection{Irregularity and personalisation as an evaluation gap}
 
-Several studies have reported encouraging results for ovulation detection using wearable signals. For example, validation studies using the Oura Ring have demonstrated that temperature-based physiological methods can identify ovulation within a surrounding window with high probability [8]. Other work has applied supervised classifiers to identify menstrual phases or predict upcoming cycle boundaries from multi-signal wearable data [6], [7]. However, systematic reviews have highlighted substantial heterogeneity in study design, including differences in reference standards, cohort selection, and evaluation methodology [5]. In particular, many studies evaluate models using within-subject or in-cycle splits, which may inflate apparent performance when compared with realistic new-user prediction settings.
+The literature is more limited when it comes to how irregularity and personalisation are operationalised in evaluation. Clinically, irregular cycles do not correspond to a single physiological state: ovulatory dysfunction is one important cause, but irregular cycles are not uniformly anovulatory \cite{pena2018majority}. From a data perspective, large app-based cohorts show heterogeneity both in average cycle length and in cycle-to-cycle variability, suggesting that irregularity is better treated as a structured temporal property than as a simple binary label \cite{bull2019realworld,li2020characterizing}. Some wearable studies report lower performance in irregular users or evaluate regular and irregular groups separately \cite{yu2022tracking}, and prior work on self-tracking and fertility estimation shows that individual history can improve prediction \cite{li2016personalised,li2021predictive}. Yet these strands are rarely brought together in a single evaluation framework. In particular, there is still limited evidence on how wearable physiology and user-specific history interact with different forms of irregularity under strict subject-wise assessment. This leaves open a central question for real-world prediction: whether additional physiological and historical information benefits irregular users broadly, or mainly helps under particular irregularity patterns.
 
-\subsection{Personalisation and subject heterogeneity in digital health models}
-
-An additional challenge in wearable-based menstrual forecasting is the strong heterogeneity of physiological signals across individuals. Baseline temperature levels, heart-rate profiles, and the magnitude of cycle-related physiological shifts vary substantially between users, which complicates the development of purely population-level models. Personalised modelling approaches attempt to address this issue by incorporating subject-specific history or by adapting model parameters using previous cycles.
-
-Prior work has suggested that personalised models can outperform population baselines when sufficient historical data are available [2]. Nevertheless, the extent to which personalisation benefits different user groups remains unclear. In particular, it is not well understood whether the gains from personalisation arise primarily in individuals with irregular cycles or whether irregularity behaves mainly as stochastic noise that limits predictive performance. This question has practical implications for the deployment of wearable menstrual forecasting systems, where only a small number of historical cycles may be available for many users.
-
-\subsection{Research gap}
-
-Taken together, the existing literature shows that wearable physiological signals can provide useful information about menstrual-cycle dynamics, but the interaction between cycle irregularity and model personalisation has received limited empirical investigation. In particular, it remains unclear how the performance of population models degrades as cycle irregularity increases, and whether personalised modelling yields larger improvements for users with irregular cycles than for those with relatively stable cycle patterns.
-
-This work addresses these questions by systematically evaluating population and personalised prediction settings on a hormone-labelled wearable dataset, while explicitly stratifying users by cycle irregularity. By analysing 0-shot and few-shot personalisation scenarios under subject-wise evaluation, we aim to quantify how much predictive benefit arises from subject-specific history and whether that benefit depends on cycle regularity.
 \section{Methodology}
 
 (This section will be revised in a later stage, the current version largely follows the methodology described in the interim report.)
@@ -307,36 +301,9 @@ These findings highlight the importance of considering user heterogeneity when d
 
 Further work will extend this study by exploring additional modelling approaches, larger datasets, and more detailed analyses of physiological signal dynamics across the menstrual cycle.
 
-\section*{References}
 
-Please number citations consecutively within brackets \cite{b1}. The 
-sentence punctuation follows the bracket \cite{b2}. Refer simply to the reference 
-number, as in \cite{b3}---do not use ``Ref. \cite{b3}'' or ``reference \cite{b3}'' except at 
-the beginning of a sentence: ``Reference \cite{b3} was the first $\ldots$''
 
-Number footnotes separately in superscripts. Place the actual footnote at 
-the bottom of the column in which it was cited. Do not put footnotes in the 
-abstract or reference list. Use letters for table footnotes.
-
-Unless there are six authors or more give all authors' names; do not use 
-``et al.''. Papers that have not been published, even if they have been 
-submitted for publication, should be cited as ``unpublished'' \cite{b4}. Papers 
-that have been accepted for publication should be cited as ``in press'' \cite{b5}. 
-Capitalize only the first word in a paper title, except for proper nouns and 
-element symbols.
-
-For papers published in translation journals, please give the English 
-citation first, followed by the original foreign-language citation \cite{b6}.
-
-\begin{thebibliography}{00}
-\bibitem{b1} G. Eason, B. Noble, and I. N. Sneddon, ``On certain integrals of Lipschitz-Hankel type involving products of Bessel functions,'' Phil. Trans. Roy. Soc. London, vol. A247, pp. 529--551, April 1955.
-\bibitem{b2} J. Clerk Maxwell, A Treatise on Electricity and Magnetism, 3rd ed., vol. 2. Oxford: Clarendon, 1892, pp.68--73.
-\bibitem{b3} I. S. Jacobs and C. P. Bean, ``Fine particles, thin films and exchange anisotropy,'' in Magnetism, vol. III, G. T. Rado and H. Suhl, Eds. New York: Academic, 1963, pp. 271--350.
-\bibitem{b4} K. Elissa, ``Title of paper if known,'' unpublished.
-\bibitem{b5} R. Nicole, ``Title of paper with only first word capitalized,'' J. Name Stand. Abbrev., in press.
-\bibitem{b6} Y. Yorozu, M. Hirano, K. Oka, and Y. Tagawa, ``Electron spectroscopy studies on magneto-optical media and plastic substrate interface,'' IEEE Transl. J. Magn. Japan, vol. 2, pp. 740--741, August 1987 [Digests 9th Annual Conf. Magnetics Japan, p. 301, 1982].
-\bibitem{b7} M. Young, The Technical Writer's Handbook. Mill Valley, CA: University Science, 1989.
-\end{thebibliography}
+\printbibliography
 \vspace{12pt}
 \color{red}
 IEEE conference templates contain guidance text for composing and formatting conference papers. Please ensure that all template text is removed from your conference paper prior to submission to the conference. Failure to remove the template text from your paper may result in your paper not being published.

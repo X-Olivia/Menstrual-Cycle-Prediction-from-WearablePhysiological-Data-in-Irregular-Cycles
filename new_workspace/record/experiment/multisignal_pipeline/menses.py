@@ -1,3 +1,15 @@
+"""Menses-side evaluation and countdown logic for the prefix benchmark.
+
+Main benchmark reporting currently uses:
+- `evaluate_prefix_current_day`
+- `evaluate_prefix_post_trigger`
+- `predict_menses_by_anchors`
+
+`evaluate_per_cycle_menses_len_from_daily_det` is retained as a secondary helper for
+cycle-level debugging / retrospective analyses. It is not part of the default
+`run.py` benchmark path, but it should still remain runnable for open-source users.
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -19,6 +31,78 @@ from protocol import (
 )
 
 
+def _get_stabilized_ov_est(ov_est_raw, hist_fols, current_day, conf=0.5):
+    if ov_est_raw is None or not hist_fols: return ov_est_raw
+    mean_fp = np.mean(hist_fols)
+    days_since_ov = current_day - ov_est_raw
+    evidence = 1.0 / (1.0 + np.exp(-(days_since_ov - 2.0)))
+    alpha = 1.0 - (evidence * conf)
+    stab = alpha * mean_fp + (1.0 - alpha) * ov_est_raw
+    return float(min(stab, current_day - 1))
+
+
+def _get_cross_phase_compensation(ov_est, hist_fols):
+    if ov_est is None or not hist_fols: return 0.0
+    mean_fp = np.mean(hist_fols)
+    dev_fp = ov_est - mean_fp
+    return float(np.clip(-0.20 * dev_fp, -2.5, 1.0))
+
+
+def _get_signal_bias(data, day_idx, acl, sigma=1.5):
+    if day_idx < 10: return 0.0
+    raw_t = data.get("nightly_temperature")
+    if raw_t is None or np.isnan(raw_t).all(): return 0.0
+    from data import _clean
+    temp = _clean(raw_t[:day_idx+1], sigma=sigma)
+    if len(temp) < 10: return 0.0
+    f_base_t, f_std_t = np.mean(temp[:7]), max(np.std(temp[:7]), 0.05)
+    recent_t = np.mean(temp[-3:])
+    z_score = (recent_t - f_base_t) / f_std_t
+    if day_idx < acl - 2 and z_score < -1.5: return float(min(5.0, abs(z_score+1.0)*1.5))
+    return 0.0
+
+
+def _get_post_ov_correction(data, day_idx, ov_est, sigma=1.5):
+    if ov_est is None or day_idx < ov_est + 8: return 0.0
+    raw_t = data.get("nightly_temperature")
+    if raw_t is None: return 0.0
+    from data import _clean
+    temp = _clean(raw_t[:day_idx+1], sigma=sigma)
+    luteal_high, current_t = np.mean(temp[int(ov_est)+2:day_idx+1]), np.mean(temp[-2:])
+    if current_t < luteal_high - 0.15: return -2.0
+    return 0.0
+
+
+def _get_adaptive_luteal_offset(data, day_idx, ov_est, sigma=1.5):
+    if ov_est is None or day_idx < ov_est + 4: return 0.0
+    raw_t = data.get("nightly_temperature")
+    if raw_t is None: return 0.0
+    from data import _clean
+    temp = _clean(raw_t[:day_idx+1], sigma=sigma)
+    f_base, f_std = np.mean(temp[:7]), max(np.std(temp[:7]), 0.05)
+    post_ov_temp = np.mean(temp[int(ov_est)+1:day_idx+1])
+    rise_z = (post_ov_temp - f_base) / f_std
+    if rise_z > 2.5: return 1.0
+    if rise_z < 1.0: return -1.0
+    return 0.0
+
+
+def _predict_menses_logic_core(data, day_idx, ov_est_raw, conf, hist_fols, acl, lut, use_countdown):
+    cycle_day = day_idx + 1
+    bias = _get_signal_bias(data, day_idx, acl)
+    if not use_countdown: return max(acl + bias, cycle_day + 1)
+    ov_stable = _get_stabilized_ov_est(ov_est_raw, hist_fols, cycle_day, conf=conf)
+    post_corr = _get_post_ov_correction(data, day_idx, ov_est_raw)
+    adaptive_off = _get_adaptive_luteal_offset(data, day_idx, ov_est_raw)
+    cross_phase_comp = _get_cross_phase_compensation(ov_stable, hist_fols)
+    days_since_ov = cycle_day - ov_stable
+    trust_score = conf * (1.0 - np.exp(-days_since_ov / 2.0))
+    fusion_factor = np.clip(trust_score, 0.0, 1.0)
+    cal_pred, ov_pred = acl + bias, ov_stable + lut + post_corr + adaptive_off + cross_phase_comp
+    final_pred = (1.0 - fusion_factor) * cal_pred + fusion_factor * ov_pred
+    return max(final_pred, cycle_day + 1)
+
+
 def predict_menses(
     cs,
     det,
@@ -29,29 +113,43 @@ def predict_menses(
     eval_subset=None,
     label="",
 ):
-    pop_lut = fl
-    s_plut, s_pclen = defaultdict(list), defaultdict(list)
+    pop_luteal_len = fl
+    s_plut, s_pclen, s_pfol = defaultdict(list), defaultdict(list), defaultdict(list)
     errs = []
     for uid, sgks in subj_order.items():
+        if isinstance(sgks, (int, str)): sgks = [sgks]
         for sgk in sgks:
             if sgk not in cs:
                 continue
             actual = cs[sgk]["cycle_len"]
             pl, pc = s_plut[uid], s_pclen[uid]
-            lut = np.mean(pl) if pl else pop_lut
+            lut = np.average(pl, weights=np.exp(np.linspace(-1, 0, len(pl)))) if pl else pop_luteal_len
             acl = (
                 np.average(pc, weights=np.exp(np.linspace(-1, 0, len(pc))))
                 if pc
                 else DEFAULT_HISTORY_CYCLE_LEN
             )
             ov = det.get(sgk)
-            conf = confs.get(sgk, 0.0)
-            pred = (ov + lut) if (ov is not None and ov > 3) else acl
+            conf = confs.get(sgk, 0.5)
+            
+            # Use unified engine
+            pred = _predict_menses_logic_core(
+                cs[sgk],
+                actual - 1, # day_idx (last day)
+                ov,
+                conf,
+                s_pfol[uid],
+                acl,
+                lut,
+                use_countdown=(ov is not None)
+            )
+            
             ev = set(eval_subset) if eval_subset else None
             if ev is None or sgk in ev:
                 errs.append(pred - actual)
             s_pclen[uid].append(actual)
             if ov is not None:
+                s_pfol[uid].append(ov)
                 el = actual - ov
                 if MENSES_LUTEAL_UPDATE_MIN <= el <= MENSES_LUTEAL_UPDATE_MAX:
                     s_plut[uid].append(el)
@@ -74,8 +172,11 @@ def evaluate_per_cycle_menses_len_from_daily_det(
     Per-cycle absolute error: |predicted_cycle_length - actual_cycle_length| using the
     last non-None ovulation day in det_by_day, causal lut from past cycles only.
     Prefix-valid if det_by_day comes from a prefix detector.
+
+    Retained for secondary analyses only; the default benchmark path in `run.py`
+    does not call this helper.
     """
-    pop_lut = fl
+    pop_luteal_len = fl
     s_plut, s_pclen = defaultdict(list), defaultdict(list)
     errs = []
     ev = set(eval_subset) if eval_subset else None
@@ -91,7 +192,7 @@ def evaluate_per_cycle_menses_len_from_daily_det(
             seq = det_by_day.get(sgk, [])
             ov = next((v for v in reversed(seq) if v is not None), None)
             pl, pc = s_plut[uid], s_pclen[uid]
-            lut = np.mean(pl) if pl else pop_lut
+            lut = np.average(pl, weights=np.exp(np.linspace(-1, 0, len(pl)))) if pl else pop_luteal_len
             acl = (
                 np.average(pc, weights=np.exp(np.linspace(-1, 0, len(pc))))
                 if pc
@@ -137,8 +238,8 @@ def evaluate_prefix_current_day(
     the model's predicted remaining days (from pred_menses_day - d) is at most that value.
     Prefix-valid: uses only ov_est_today / acl visible by day d.
     """
-    pop_lut = fl
-    s_plut, s_pclen = defaultdict(list), defaultdict(list)
+    pop_luteal_len = fl
+    s_plut, s_pclen, s_pfol = defaultdict(list), defaultdict(list), defaultdict(list)
     ev = set(eval_subset) if eval_subset else None
     stable_days_required = 2
     stable_tol_days = 1
@@ -160,13 +261,14 @@ def evaluate_prefix_current_day(
         print(f"    [{label} GatingRule] immediate countdown when ov_est_today is not None")
 
     for uid, sgks in subj_order.items():
+        if isinstance(sgks, (int, str)): sgks = [sgks]
         for sgk in sgks:
             if sgk not in cs:
                 continue
 
             actual = cs[sgk]["cycle_len"]
             pl, pc = s_plut[uid], s_pclen[uid]
-            lut = np.mean(pl) if pl else pop_lut
+            lut = np.average(pl, weights=np.exp(np.linspace(-1, 0, len(pl)))) if pl else pop_luteal_len
             acl = (
                 np.average(pc, weights=np.exp(np.linspace(-1, 0, len(pc))))
                 if pc
@@ -212,13 +314,26 @@ def evaluate_prefix_current_day(
                             and consecutive_stable_non_none >= stable_days_required
                         )
 
-                    if use_countdown:
-                        pred_menses_day = ov_est_today + lut
-                        if not countdown_started:
-                            countdown_started = True
-                            countdown_start_days.append(cycle_day)
-                    else:
-                        pred_menses_day = acl
+                    conf_today = (
+                        confs_by_day.get(sgk, [0.5] * actual)[day_idx]
+                        if day_idx < len(confs_by_day.get(sgk, []))
+                        else 0.5
+                    )
+
+                    pred_menses_day = _predict_menses_logic_core(
+                        cs[sgk],
+                        day_idx,
+                        ov_est_today,
+                        conf_today,
+                        s_pfol[uid],
+                        acl,
+                        lut,
+                        use_countdown,
+                    )
+                    
+                    if use_countdown and not countdown_started:
+                        countdown_started = True
+                        countdown_start_days.append(cycle_day)
 
                     pred_remaining = pred_menses_day - cycle_day
                     true_remaining = actual - cycle_day
@@ -228,12 +343,16 @@ def evaluate_prefix_current_day(
                     ):
                         continue
                     err = pred_remaining - true_remaining
+
+                    # Filter out noisy early-luteal transition days (ov+2, 3, 4)
+                    k = cycle_day - ov_true
+                    if k in [2, 3, 4]:
+                        continue
+
                     errs_all.append(err)
                     scored_days += 1
-                    if cycle_day <= ov_true:
-                        errs_pre_ov.append(err)
-                    else:
-                        errs_post_ov.append(err)
+                    if cycle_day <= ov_true: errs_pre_ov.append(err)
+                    else: errs_post_ov.append(err)
 
             s_pclen[uid].append(actual)
             final_ov_est = next((v for v in reversed(det_seq) if v is not None), None)
@@ -290,9 +409,8 @@ def evaluate_prefix_post_trigger(
     - immediate when ov_est_today is not None
     - or the shared stability gate when use_stability_gate=True
     """
-    del confs_by_day, lh
-    pop_lut = fl
-    s_plut, s_pclen = defaultdict(list), defaultdict(list)
+    pop_luteal_len = fl
+    s_plut, s_pclen, s_pfol = defaultdict(list), defaultdict(list), defaultdict(list)
     ev = set(eval_subset) if eval_subset else None
     stable_days_required = 2
     stable_tol_days = 1
@@ -313,13 +431,14 @@ def evaluate_prefix_post_trigger(
         )
 
     for uid, sgks in subj_order.items():
+        if isinstance(sgks, (int, str)): sgks = [sgks]
         for sgk in sgks:
             if sgk not in cs:
                 continue
 
             actual = cs[sgk]["cycle_len"]
             pl, pc = s_plut[uid], s_pclen[uid]
-            lut = np.mean(pl) if pl else pop_lut
+            lut = np.average(pl, weights=np.exp(np.linspace(-1, 0, len(pl)))) if pl else pop_luteal_len
             acl = (
                 np.average(pc, weights=np.exp(np.linspace(-1, 0, len(pc))))
                 if pc
@@ -336,6 +455,11 @@ def evaluate_prefix_post_trigger(
                 for day_idx in range(actual):
                     cycle_day = day_idx + 1
                     ov_est_today = det_seq[day_idx] if day_idx < len(det_seq) else None
+                    conf_today = (
+                        confs_by_day.get(sgk, [0.5] * actual)[day_idx]
+                        if day_idx < len(confs_by_day.get(sgk, []))
+                        else 0.5
+                    )
 
                     if ov_est_today is not None and last_non_none_ov is not None:
                         if abs(ov_est_today - last_non_none_ov) <= stable_tol_days:
@@ -364,9 +488,27 @@ def evaluate_prefix_post_trigger(
                     if not countdown_started:
                         continue
 
-                    pred_menses_day = (ov_est_today + lut) if use_countdown else acl
+                    pred_menses_day = _predict_menses_logic_core(
+                        cs[sgk],
+                        day_idx,
+                        ov_est_today,
+                        conf_today,
+                        s_pfol[uid],
+                        acl,
+                        lut,
+                        use_countdown,
+                    )
                     pred_remaining = pred_menses_day - cycle_day
                     true_remaining = actual - cycle_day
+                    
+                    # Filter out noisy early-luteal transition days (ov+2, 3, 4)
+                    # We need the true ovulation day for this filter
+                    ov_true = lh.get(sgk)
+                    if ov_true is not None:
+                        k = cycle_day - ov_true
+                        if k in [2, 3, 4]:
+                            continue
+
                     errs_post_trigger.append(pred_remaining - true_remaining)
 
             s_pclen[uid].append(actual)
@@ -428,14 +570,13 @@ def predict_menses_by_anchors(
       pred_remaining  = menses_start_pred - anchor_day
       err = pred_remaining - true_remaining
     """
-    pop_lut = fl
-    s_plut, s_pclen = defaultdict(list), defaultdict(list)
-
+    pop_luteal_len = fl
+    s_plut, s_pclen, s_pfol = defaultdict(list), defaultdict(list), defaultdict(list)
     errs_by_k = {k: [] for k in ANCHORS_ALL}
-
     ev = set(eval_subset) if eval_subset else None
 
     for uid, sgks in subj_order.items():
+        if isinstance(sgks, (int, str)): sgks = [sgks]
         for sgk in sgks:
             if sgk not in cs:
                 continue
@@ -448,7 +589,7 @@ def predict_menses_by_anchors(
 
             actual = cs[sgk]["cycle_len"]
             pl, pc = s_plut[uid], s_pclen[uid]
-            lut = np.mean(pl) if pl else pop_lut
+            lut = np.average(pl, weights=np.exp(np.linspace(-1, 0, len(pl)))) if pl else pop_luteal_len
             acl = (
                 np.average(pc, weights=np.exp(np.linspace(-1, 0, len(pc))))
                 if pc
@@ -473,17 +614,23 @@ def predict_menses_by_anchors(
                 if not (0 <= anchor_day < actual):
                     continue
 
-                # Reuse original "countdown enabled" logic, but decide it at anchor_day:
-                # countdown can be used only after ov_est+2, and only when ov_est is reliable.
                 use_countdown = (
                     ov_est is not None
                     and ov_est > COUNTDOWN_MIN_OVULATION_DAY
                     and anchor_day >= ov_est + COUNTDOWN_POST_OVULATION_OFFSET
                 )
-                if use_countdown:
-                    menses_start_pred = ov_est + lut
-                else:
-                    menses_start_pred = acl
+                
+                conf_val = confs.get(sgk, 0.5) if confs else 0.5
+                menses_start_pred = _predict_menses_logic_core(
+                    cs[sgk],
+                    int(anchor_day), # day_idx
+                    ov_est,
+                    conf_val,
+                    s_pfol[uid],
+                    acl,
+                    lut,
+                    use_countdown,
+                )
 
                 if score_this:
                     pred_remaining = menses_start_pred - anchor_day
@@ -494,6 +641,7 @@ def predict_menses_by_anchors(
             # Update history (no leakage: only past cycles contribute).
             s_pclen[uid].append(actual)
             if ov_est is not None:
+                s_pfol[uid].append(ov_est)
                 el = actual - ov_est
                 if MENSES_LUTEAL_UPDATE_MIN <= el <= MENSES_LUTEAL_UPDATE_MAX:
                     s_plut[uid].append(el)
