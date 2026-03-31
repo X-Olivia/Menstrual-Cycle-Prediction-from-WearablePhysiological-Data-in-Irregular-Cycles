@@ -1,0 +1,46 @@
+{
+  "analysis_version": "l3_few_shot_v1",
+  "artifacts": {
+    "l3_calibration_csv": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/l3_few_shot_calibration_v1.csv",
+    "l3_manifest_json": "/Users/xujing/FYP/new_workspace/record/research/results/manifests/l3_few_shot_manifest_v1.json",
+    "l3_results_csv": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/l3_few_shot_results_v1.csv",
+    "l3_results_md": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/l3_few_shot_results_v1.md"
+  },
+  "calibration_version": "l3_v1",
+  "l3_manifest": {
+    "calibration_version": "l3_v1",
+    "config": {
+      "calibration_version": "l3_v1",
+      "hr_baseline_window_pre": 7,
+      "hr_evidence_margin": 0.0,
+      "localizer_score_min": 1.5,
+      "max_prior_cycles": 3,
+      "prior_std_floor": 0.08,
+      "refine_radius_max": 3,
+      "refine_radius_min": 1,
+      "refine_weight_high": 0.65,
+      "refine_weight_low": 0.35,
+      "temp_evidence_floor": 0.05,
+      "temp_evidence_scale": 0.5,
+      "temp_shift_post_offset": 2,
+      "temp_shift_window_post": 5,
+      "temp_shift_window_pre": 5,
+      "trigger_bias_clip": 0.06,
+      "trigger_bias_scale": 0.5
+    },
+    "n_ready": 21,
+    "n_rows": 111,
+    "n_users_ready": 14
+  },
+  "methods": [
+    "Calendar",
+    "PhaseCls-Temp+HR[RF-baseline]",
+    "PhaseCls-Temp+HR[L3-few-shot]"
+  ],
+  "n_rows": 18,
+  "subgroup_families": [
+    "cycle_length_level_group",
+    "cycle_variability_group"
+  ],
+  "subgroup_version": "v1"
+}

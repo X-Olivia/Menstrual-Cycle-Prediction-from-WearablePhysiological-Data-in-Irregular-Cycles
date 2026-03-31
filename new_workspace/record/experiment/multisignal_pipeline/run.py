@@ -23,7 +23,7 @@ from report_utils import (
     _print_summary_table,
     _rank_candidates,
     _report_rows,
-)
+    )
 
 
 def main(
@@ -84,12 +84,12 @@ def main(
     localizer_refinement_rows = []
     if compare_localizer_refinement:
         localizer_refinement_rows = _run_localizer_refinement_ablation(
-            cs,
-            lh,
-            subj_order,
-            labeled,
-            quality_subset,
-        )
+        cs,
+        lh,
+        subj_order,
+        labeled,
+        quality_subset,
+    )
 
     print(f"\n{SEP}\n  A. PREFIX CANDIDATES\n{SEP}")
     bench = run_prefix_benchmark(cs, lh, subj_order, labeled, quality_subset, mode)

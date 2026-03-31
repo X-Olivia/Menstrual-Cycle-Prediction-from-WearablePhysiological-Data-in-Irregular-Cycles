@@ -1,0 +1,18 @@
+{
+  "analysis_version": "baseline_subgroup_v1",
+  "artifacts": {
+    "baseline_manifest_json": "/Users/xujing/FYP/new_workspace/record/research/results/manifests/baseline_subgroup_manifest_v1.json",
+    "baseline_results_csv": "/Users/xujing/FYP/new_workspace/record/research/results/baseline_subgroup_analysis/baseline_subgroup_results_v1.csv",
+    "baseline_results_md": "/Users/xujing/FYP/new_workspace/record/research/results/baseline_subgroup_analysis/baseline_subgroup_results_v1.md"
+  },
+  "methods": [
+    "Calendar",
+    "PhaseCls-Temp+HR[RF-baseline]"
+  ],
+  "n_rows": 12,
+  "subgroup_families": [
+    "cycle_length_level_group",
+    "cycle_variability_group"
+  ],
+  "subgroup_version": "v1"
+}

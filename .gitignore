@@ -35,6 +35,10 @@ new_workspace/mcphases-a-dataset-of-physiological-hormonal-and-self-reported-eve
 
 # 实验跑数输出 CSV（不上传）
 new_workspace/record/experiment/personalization_stratified/outputs/
+personalization_stratified/outputs/
+
+# multisignal 单次完整跑数日志（不上传）
+new_workspace/record/experiment/multisignal_pipeline/prefix_full_*.log
 
 # 数据文件（不上传到 GitHub）
 main_workspace/processed_data/

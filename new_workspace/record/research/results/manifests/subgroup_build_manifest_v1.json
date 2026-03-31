@@ -1,0 +1,42 @@
+{
+  "artifacts": {
+    "manifest_json": "/Users/xujing/FYP/new_workspace/record/research/results/manifests/subgroup_build_manifest_v1.json",
+    "subgroup_summary_csv": "/Users/xujing/FYP/new_workspace/record/research/results/subgroup_tables/subgroup_summary_v1.csv",
+    "subgroup_summary_md": "/Users/xujing/FYP/new_workspace/record/research/results/subgroup_tables/subgroup_summary_v1.md",
+    "user_cycle_subgroups_csv": "/Users/xujing/FYP/new_workspace/record/research/results/subgroup_tables/user_cycle_subgroups_v1.csv"
+  },
+  "config": {
+    "cycle_length_min_history": 1,
+    "ovulatory_rate_anov_max": 0.2,
+    "ovulatory_rate_consistent_min": 0.8,
+    "ovulatory_status_min_history": 2,
+    "subgroup_version": "v1",
+    "typical_cycle_max": 35.0,
+    "typical_cycle_min": 23.0,
+    "variability_high_sd_min": 7.0,
+    "variability_low_sd_max": 4.0,
+    "variability_min_history": 2
+  },
+  "n_cycle_length_assigned": 71,
+  "n_cycles": 111,
+  "n_ovulatory_status_assigned": 38,
+  "n_rows": 111,
+  "n_users": 40,
+  "n_variability_assigned": 38,
+  "quality_cycles": 42,
+  "signal_cols": [
+    "nightly_temperature",
+    "noct_temp",
+    "rhr",
+    "rmssd_mean",
+    "rmssd_std",
+    "lf_mean",
+    "hf_mean",
+    "lf_hf_ratio",
+    "noct_hr_mean",
+    "noct_hr_std",
+    "noct_hr_min",
+    "hrv_coverage"
+  ],
+  "subgroup_version": "v1"
+}
