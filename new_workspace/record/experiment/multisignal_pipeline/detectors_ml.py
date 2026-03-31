@@ -11,12 +11,22 @@ import pandas as pd
 from scipy.ndimage import gaussian_filter1d
 from scipy.stats import ttest_ind
 
+from core.localizer import (
+    _precompute_prefix_localizer_payload,
+    localize_ov_within_prefix,
+    localize_ov_within_prefix_scored,
+    localizer_score_smooth_candidate,
+    precompute_prefix_localizer_table,
+)
+from core.stabilization import apply_stabilization
 from data import (
     PROCESSED,
     _clean,
     _load_all_signals_source_files,
     _snapshot_source_files,
 )
+from experimental.localizer_fusion import multi_lookback_fused_sequences
+from experimental.phase_ensemble import precompute_prefix_phase_probabilities_loso_ensemble
 from protocol import (
     CNN_MAX_LEN,
     DEFAULT_HISTORY_CYCLE_STD,
@@ -28,6 +38,7 @@ from protocol import (
     MIN_CYCLE_LEN_FOR_DETECTION,
     MIN_DETECTION_DAY,
     PHASE_CLASSIFIER_BOUNDARY_THRESHOLD,
+    PHASECLS_MONOTONE_BACK_MARGIN,
     PHASECLS_CLAMP_RADIUS,
     PHASECLS_LOCALIZER_AGREEMENT_DAYS,
     PHASECLS_LOCALIZER_AGREEMENT_TOL,
@@ -39,7 +50,6 @@ from protocol import (
     PHASECLS_DEFAULT_GROUPS,
     PHASECLS_LOCALIZER_CACHE_VERSION,
     PHASECLS_LOCALIZER_SCORE_SMOOTH_M,
-    PHASECLS_MONOTONE_BACK_MARGIN,
     PHASECLS_SOFT_STICKY_MARGIN,
     PHASECLS_SOFT_STICKY_RADIUS,
     PHASECLS_STABILIZATION_POLICY,
@@ -86,302 +96,47 @@ def _phase_prob_cache_path(cache_tag, sigma, model_type):
     )
 
 
-def _phase_prob_ensemble_cache_path(cache_tag, sigma, ensemble_slug):
-    safe_tag = cache_tag.replace("+", "plus").replace("/", "_")
-    sigma_tag = str(sigma).replace(".", "p")
-    return PROCESSED / "cache" / (
-        f"prefix_phase_probs_{safe_tag}_{ensemble_slug}_sigma{sigma_tag}_{PHASECLS_MODEL_CACHE_VERSION}.pkl"
+def _recent_localizer_agreement(localizer_seq, day_idx, k, tol):
+    if k is None or tol is None:
+        return False
+    k = int(k)
+    tol = int(tol)
+    if k <= 0 or day_idx + 1 < k:
+        return False
+    win = localizer_seq[day_idx - k + 1 : day_idx + 1]
+    if len(win) < k or any(v is None for v in win):
+        return False
+    vals = [int(v) for v in win]
+    return (max(vals) - min(vals)) <= tol
+
+
+def _localizer_evidence_ok(
+    localizer_seq,
+    score_seq,
+    shift_seq,
+    day_idx,
+    score_min,
+    shift_min,
+    agreement_days,
+    agreement_tol,
+):
+    if day_idx >= len(localizer_seq):
+        return False
+    ov_est = localizer_seq[day_idx]
+    score = score_seq[day_idx] if day_idx < len(score_seq) else None
+    shift = shift_seq[day_idx] if day_idx < len(shift_seq) else None
+    if ov_est is None or score is None or shift is None:
+        return False
+    if float(score) < float(score_min):
+        return False
+    if float(shift) < float(shift_min):
+        return False
+    return _recent_localizer_agreement(
+        localizer_seq,
+        day_idx,
+        agreement_days,
+        agreement_tol,
     )
-
-
-def precompute_prefix_phase_probabilities_loso_ensemble(
-    cs,
-    lh,
-    sigs,
-    model_types,
-    sigma,
-    cache_tag,
-):
-    """
-    Row-wise average of LOSO phase probabilities from multiple classifier families.
-    Each model_types[k] is trained/predicted with identical LOSO splits (independent sets).
-    """
-    ensemble_slug = "ens_" + "_".join(model_types)
-    cache_path = _phase_prob_ensemble_cache_path(cache_tag, sigma, ensemble_slug)
-    source_snapshot = _snapshot_source_files(_load_all_signals_source_files())
-    if cache_path.exists():
-        try:
-            with cache_path.open("rb") as f:
-                payload = pickle.load(f)
-            if (
-                payload.get("source_snapshot") == source_snapshot
-                and payload.get("cache_tag") == cache_tag
-                and payload.get("sigma") == sigma
-                and tuple(payload.get("model_types", ())) == tuple(model_types)
-                and payload.get("feature_version") == PREFIX_CACHE_VERSION
-                and payload.get("version") == PHASECLS_MODEL_CACHE_VERSION
-            ):
-                print(f"  Using cached prefix phase probabilities (ensemble): {cache_path}")
-                return payload
-        except Exception:
-            pass
-
-    payloads = [
-        precompute_prefix_phase_probabilities_loso(cs, lh, sigs, mt, sigma, cache_tag)
-        for mt in model_types
-    ]
-    meta0 = payloads[0]["meta_df"]
-    if len(meta0) == 0:
-        out = {
-            "source_snapshot": source_snapshot,
-            "cache_tag": cache_tag,
-            "sigma": sigma,
-            "model_types": tuple(model_types),
-            "model_type": ensemble_slug,
-            "feature_version": PREFIX_CACHE_VERSION,
-            "version": PHASECLS_MODEL_CACHE_VERSION,
-            "meta_df": meta0,
-        }
-        return out
-    p_mat = np.column_stack([p["meta_df"]["p_raw"].values for p in payloads])
-    meta_df = meta0[["sgk", "day_idx", "uid", "ov_true", "y_has_ovulated"]].copy()
-    meta_df["p_raw"] = np.nanmean(p_mat, axis=1)
-    payload = {
-        "source_snapshot": source_snapshot,
-        "cache_tag": cache_tag,
-        "sigma": sigma,
-        "model_types": tuple(model_types),
-        "model_type": ensemble_slug,
-        "feature_version": PREFIX_CACHE_VERSION,
-        "version": PHASECLS_MODEL_CACHE_VERSION,
-        "meta_df": meta_df,
-    }
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    with cache_path.open("wb") as f:
-        pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
-    print(f"  Rebuilt prefix phase ensemble probabilities cache: {cache_path}")
-    return payload
-
-
-def _multi_lookback_fused_sequences(payloads, sgk, n):
-    ov_s = [None] * n
-    sc_s = [None] * n
-    for day_idx in range(n):
-        ovs, scs = [], []
-        for pay in payloads:
-            seq = pay["localizer_table"].get(sgk, [])
-            scq = pay["score_table"].get(sgk, [])
-            if day_idx < len(seq) and seq[day_idx] is not None:
-                ovs.append(int(seq[day_idx]))
-                sd = scq[day_idx] if day_idx < len(scq) else None
-                scs.append(float(sd) if sd is not None else 0.0)
-        if ovs:
-            w = np.maximum(np.array(scs, dtype=float), 1e-9)
-            ov_s[day_idx] = int(
-                round(float(np.average(np.array(ovs, dtype=float), weights=w)))
-            )
-            sc_s[day_idx] = float(np.mean(scs))
-    return ov_s, sc_s
-
-
-def _phase_localizer_cache_path(cache_tag, lookback_localize):
-    safe_tag = cache_tag.replace("+", "plus").replace("/", "_")
-    lookback_tag = "full" if lookback_localize is None else str(int(lookback_localize))
-    return PROCESSED / "cache" / (
-        f"prefix_phase_localizer_{safe_tag}_lb{lookback_tag}_{PHASECLS_LOCALIZER_CACHE_VERSION}.pkl"
-    )
-
-
-_LOCALIZER_SIGNAL_INVERTS = {
-    "nightly_temperature": False,
-    "noct_temp": False,
-    "rhr": False,
-    "noct_hr_mean": False,
-    "noct_hr_min": False,
-    "rmssd_mean": True,
-    "hf_mean": True,
-    "lf_hf_ratio": False,
-}
-
-
-def _resolve_localizer_spec(sigs):
-    localizer_sigs = []
-    inverts = []
-    for sk in sigs:
-        if sk in _LOCALIZER_SIGNAL_INVERTS:
-            localizer_sigs.append(sk)
-            inverts.append(_LOCALIZER_SIGNAL_INVERTS[sk])
-    if not localizer_sigs:
-        localizer_sigs = list(sigs)
-        inverts = [False] * len(localizer_sigs)
-    return localizer_sigs, inverts
-
-
-def precompute_prefix_localizer_table(cs, sigs, lookback_localize, cache_tag):
-    payload = _precompute_prefix_localizer_payload(cs, sigs, lookback_localize, cache_tag)
-    return payload["localizer_table"]
-
-
-def _precompute_prefix_localizer_payload(cs, sigs, lookback_localize, cache_tag):
-    cache_path = _phase_localizer_cache_path(cache_tag, lookback_localize)
-    source_snapshot = _snapshot_source_files(_load_all_signals_source_files())
-    if cache_path.exists():
-        try:
-            with cache_path.open("rb") as f:
-                payload = pickle.load(f)
-            if (
-                payload.get("source_snapshot") == source_snapshot
-                and payload.get("cache_tag") == cache_tag
-                and payload.get("lookback_localize") == lookback_localize
-                and payload.get("version") == PHASECLS_LOCALIZER_CACHE_VERSION
-            ):
-                print(f"  Using cached prefix localizer table: {cache_path}")
-                return payload
-        except Exception:
-            pass
-
-    localizer_sigs, localizer_inverts = _resolve_localizer_spec(sigs)
-    localizer_table = {}
-    score_table = {}
-    shift_table = {}
-    for sgk, data in cs.items():
-        n = int(data["cycle_len"])
-        seq = [None] * n
-        score_seq = [None] * n
-        shift_seq = [None] * n
-        for day_idx in range(n):
-            cand = localize_ov_within_prefix_scored(
-                data,
-                prefix_len=day_idx + 1,
-                sigs=localizer_sigs,
-                inverts=localizer_inverts,
-                lookback_localize=lookback_localize,
-            )
-            ov_est = cand["ov_est"]
-            if ov_est is not None:
-                assert ov_est <= day_idx
-                seq[day_idx] = int(ov_est)
-                score_seq[day_idx] = float(cand["score"])
-                shift_seq[day_idx] = float(cand["shift"])
-        localizer_table[sgk] = seq
-        score_table[sgk] = score_seq
-        shift_table[sgk] = shift_seq
-
-    payload = {
-        "source_snapshot": source_snapshot,
-        "cache_tag": cache_tag,
-        "lookback_localize": lookback_localize,
-        "version": PHASECLS_LOCALIZER_CACHE_VERSION,
-        "localizer_table": localizer_table,
-        "score_table": score_table,
-        "shift_table": shift_table,
-    }
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    with cache_path.open("wb") as f:
-        pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
-    print(f"  Rebuilt prefix localizer table cache: {cache_path}")
-    return payload
-
-
-def localize_ov_within_prefix_scored(
-    data,
-    prefix_len,
-    sigs,
-    inverts=None,
-    lookback_localize=None,
-):
-    """
-    Deterministic fused split localizer using only visible prefix days.
-
-    Returns the best split day together with split strength and left-right shift,
-    so trigger/stabilization can reason about estimate quality without labels.
-    """
-    if prefix_len < MIN_CYCLE_LEN_FOR_DETECTION:
-        return {"ov_est": None, "score": None, "shift": None}
-    if inverts is None:
-        inverts = [False] * len(sigs)
-
-    valid_ts = []
-    for sk, inv in zip(sigs, inverts):
-        raw = data.get(sk)
-        if raw is None:
-            continue
-        prefix_raw = np.asarray(raw[:prefix_len], dtype=float)
-        assert len(prefix_raw) == prefix_len
-        if np.isnan(prefix_raw).all():
-            continue
-        t = _clean(prefix_raw, sigma=PREFIX_BENCHMARK_ML_SIGMA)
-        if inv:
-            t = -t
-        std_t = np.std(t)
-        if std_t > 1e-8:
-            valid_ts.append((t - np.mean(t)) / std_t)
-        else:
-            valid_ts.append(np.zeros_like(t))
-
-    if not valid_ts:
-        return {"ov_est": None, "score": None, "shift": None}
-
-    fused = np.mean(valid_ts, axis=0)
-    search_lo = MIN_DETECTION_DAY
-    if lookback_localize is not None:
-        search_lo = max(MIN_DETECTION_DAY, prefix_len - int(lookback_localize))
-    search_hi = prefix_len - MAX_RIGHT_MARGIN_DAYS
-    if search_hi <= search_lo:
-        return {"ov_est": None, "score": None, "shift": None}
-
-    best_sp = None
-    best_stat = -np.inf
-    best_shift = None
-    for sp in range(search_lo, search_hi):
-        left = fused[:sp]
-        right = fused[sp:prefix_len]
-        if len(left) < 2 or len(right) < 2:
-            continue
-        try:
-            stat, _ = ttest_ind(right, left, alternative="greater")
-        except Exception:
-            continue
-        if np.isnan(stat):
-            continue
-        if stat > best_stat:
-            best_stat = float(stat)
-            best_sp = int(sp)
-            best_shift = float(np.mean(right) - np.mean(left))
-
-    if best_sp is None:
-        return {"ov_est": None, "score": None, "shift": None}
-    assert best_sp <= prefix_len - 1
-    return {
-        "ov_est": int(best_sp),
-        "score": float(best_stat),
-        "shift": float(best_shift if best_shift is not None else 0.0),
-    }
-
-
-def localize_ov_within_prefix(
-    data,
-    prefix_len,
-    sigs,
-    inverts=None,
-    lookback_localize=None,
-):
-    """
-    Deterministic fused split localizer using only visible prefix days.
-
-    Search range:
-      [search_lo, prefix_len - MAX_RIGHT_MARGIN_DAYS)
-    where:
-      search_lo = MIN_DETECTION_DAY
-      or max(MIN_DETECTION_DAY, prefix_len - lookback_localize)
-    """
-    return localize_ov_within_prefix_scored(
-        data,
-        prefix_len,
-        sigs,
-        inverts=inverts,
-        lookback_localize=lookback_localize,
-    )["ov_est"]
 
 
 def build_prefix_phase_features(
@@ -578,183 +333,6 @@ def precompute_prefix_phase_probabilities_loso(
     return payload
 
 
-def _recent_localizer_agreement(localizer_seq, day_idx, k, tol):
-    if k is None or tol is None:
-        return False
-    k = int(k)
-    tol = int(tol)
-    if k <= 0 or day_idx + 1 < k:
-        return False
-    win = localizer_seq[day_idx - k + 1: day_idx + 1]
-    if len(win) < k or any(v is None for v in win):
-        return False
-    vals = [int(v) for v in win]
-    return (max(vals) - min(vals)) <= tol
-
-
-def _localizer_evidence_ok(
-    localizer_seq,
-    score_seq,
-    shift_seq,
-    day_idx,
-    score_min,
-    shift_min,
-    agreement_days,
-    agreement_tol,
-):
-    if day_idx >= len(localizer_seq):
-        return False
-    ov_est = localizer_seq[day_idx]
-    score = score_seq[day_idx] if day_idx < len(score_seq) else None
-    shift = shift_seq[day_idx] if day_idx < len(shift_seq) else None
-    if ov_est is None or score is None or shift is None:
-        return False
-    if float(score) < float(score_min):
-        return False
-    if float(shift) < float(shift_min):
-        return False
-    return _recent_localizer_agreement(
-        localizer_seq,
-        day_idx,
-        agreement_days,
-        agreement_tol,
-    )
-
-
-def _localizer_score_smooth_candidate(localizer_seq, score_seq, day_idx, window_m):
-    """
-    Prefix-valid: uses localizer (ov_est, score) from days [day_idx - m + 1, day_idx] only.
-    Returns integer ov_est (clamped) and a scalar score for state bookkeeping.
-    """
-    if window_m < 2:
-        return None, None
-    lo = max(0, int(day_idx) - int(window_m) + 1)
-    pairs = []
-    for j in range(lo, int(day_idx) + 1):
-        if j >= len(localizer_seq):
-            break
-        oe = localizer_seq[j]
-        sc = score_seq[j] if j < len(score_seq) else None
-        if oe is None or sc is None:
-            continue
-        sf = float(sc)
-        if np.isnan(sf):
-            continue
-        pairs.append((int(oe), sf))
-    if not pairs:
-        return None, None
-    w = np.maximum(np.array([p[1] for p in pairs], dtype=float), 1e-9)
-    vals = np.array([p[0] for p in pairs], dtype=float)
-    est = int(round(float(np.average(vals, weights=w))))
-    hi = int(day_idx) - int(MAX_RIGHT_MARGIN_DAYS)
-    est = max(int(MIN_DETECTION_DAY), min(est, hi))
-    avg_sc = float(np.average([p[1] for p in pairs], weights=w))
-    return est, avg_sc
-
-
-def _apply_stabilization(
-    current_ov_est,
-    current_score,
-    ov_est,
-    ov_score,
-    day_idx,
-    stabilization_policy,
-    clamp_radius,
-    sticky_radius,
-    sticky_improve_margin,
-    monotone_back_margin=None,
-):
-    if monotone_back_margin is None:
-        monotone_back_margin = float(PHASECLS_MONOTONE_BACK_MARGIN)
-
-    if stabilization_policy == "none":
-        if ov_est is None:
-            return current_ov_est, current_score
-        return int(ov_est), float(ov_score if ov_score is not None else 0.0)
-
-    if stabilization_policy == "freeze":
-        if current_ov_est is None and ov_est is not None:
-            return int(ov_est), float(ov_score if ov_score is not None else 0.0)
-        return current_ov_est, current_score
-
-    if stabilization_policy == "clamp":
-        if current_ov_est is None:
-            if ov_est is None:
-                return current_ov_est, current_score
-            return int(ov_est), float(ov_score if ov_score is not None else 0.0)
-        if ov_est is None:
-            return current_ov_est, current_score
-        lo = max(MIN_DETECTION_DAY, int(current_ov_est) - int(clamp_radius))
-        hi = min(day_idx, int(current_ov_est) + int(clamp_radius))
-        if hi < lo:
-            hi = lo
-        return int(min(max(int(ov_est), lo), hi)), float(ov_score if ov_score is not None else current_score)
-
-    if stabilization_policy == "sticky":
-        if current_ov_est is None:
-            if ov_est is None:
-                return current_ov_est, current_score
-            return int(ov_est), float(ov_score if ov_score is not None else 0.0)
-        if ov_est is None:
-            return current_ov_est, current_score
-        ov_est = int(ov_est)
-        ov_score = float(ov_score if ov_score is not None else current_score if current_score is not None else 0.0)
-        if ov_est == int(current_ov_est):
-            return int(current_ov_est), max(float(current_score or 0.0), ov_score)
-        if abs(ov_est - int(current_ov_est)) <= int(sticky_radius):
-            baseline_score = float(current_score or 0.0)
-            if ov_score >= baseline_score + float(sticky_improve_margin):
-                return ov_est, ov_score
-        return int(current_ov_est), float(current_score if current_score is not None else 0.0)
-
-    if stabilization_policy == "soft_sticky":
-        if current_ov_est is None:
-            if ov_est is None:
-                return current_ov_est, current_score
-            ne = max(MIN_DETECTION_DAY, min(int(ov_est), int(day_idx) - int(MAX_RIGHT_MARGIN_DAYS)))
-            return ne, float(ov_score if ov_score is not None else 0.0)
-        if ov_est is None:
-            return current_ov_est, current_score
-        cur = int(current_ov_est)
-        new = max(MIN_DETECTION_DAY, min(int(ov_est), int(day_idx) - int(MAX_RIGHT_MARGIN_DAYS)))
-        ns = float(ov_score if ov_score is not None else current_score if current_score is not None else 0.0)
-        cs = float(current_score if current_score is not None else 0.0)
-        if new == cur:
-            return cur, max(cs, ns)
-        if abs(new - cur) <= int(sticky_radius) and ns >= cs + float(sticky_improve_margin):
-            out = cur + (1 if new > cur else -1)
-            return out, ns
-        return cur, cs
-
-    if stabilization_policy == "bounded_monotone":
-        if current_ov_est is None:
-            if ov_est is None:
-                return current_ov_est, current_score
-            ne = max(MIN_DETECTION_DAY, min(int(ov_est), int(day_idx) - int(MAX_RIGHT_MARGIN_DAYS)))
-            return ne, float(ov_score if ov_score is not None else 0.0)
-        if ov_est is None:
-            return current_ov_est, current_score
-        cur = int(current_ov_est)
-        new = max(MIN_DETECTION_DAY, min(int(ov_est), int(day_idx) - int(MAX_RIGHT_MARGIN_DAYS)))
-        ns = float(ov_score if ov_score is not None else current_score if current_score is not None else 0.0)
-        cs = float(current_score if current_score is not None else 0.0)
-        mb = float(monotone_back_margin)
-        hi = int(day_idx) - int(MAX_RIGHT_MARGIN_DAYS)
-        if new == cur:
-            return cur, max(cs, ns)
-        if new < cur:
-            out = max(int(new), cur - 1)
-            out = max(MIN_DETECTION_DAY, min(out, hi))
-            return out, max(ns, cs)
-        if ns < cs + mb:
-            return cur, cs
-        out = min(cur + 1, int(new))
-        out = max(MIN_DETECTION_DAY, min(out, hi))
-        return out, ns
-
-    raise ValueError(f"Unknown stabilization_policy: {stabilization_policy}")
-
-
 def prefix_phase_classify_loso(
     cs,
     lh,
@@ -844,7 +422,7 @@ def prefix_phase_classify_loso(
     for sgk, grp in meta_df.dropna(subset=["p_raw"]).sort_values(["sgk", "day_idx"]).groupby("sgk"):
         if loc_payloads is not None:
             nlen = int(cs[sgk]["cycle_len"])
-            localizer_seq, score_seq = _multi_lookback_fused_sequences(loc_payloads, sgk, nlen)
+            localizer_seq, score_seq = multi_lookback_fused_sequences(loc_payloads, sgk, nlen)
             shift_seq = shift_payload["shift_table"].get(sgk, [])
         else:
             localizer_seq = localizer_table.get(sgk, [])
@@ -929,7 +507,7 @@ def prefix_phase_classify_loso(
                     if localizer_smooth_window_m
                     else int(PHASECLS_LOCALIZER_SCORE_SMOOTH_M)
                 )
-                sm_ov, sm_sc = _localizer_score_smooth_candidate(
+                sm_ov, sm_sc = localizer_score_smooth_candidate(
                     localizer_seq, score_seq, day_idx, mwin
                 )
                 if sm_ov is None:
@@ -940,7 +518,7 @@ def prefix_phase_classify_loso(
                 ov_est = localizer_seq[day_idx] if day_idx < len(localizer_seq) else None
                 ov_score = score_seq[day_idx] if day_idx < len(score_seq) else None
                 apply_policy = stabilization_policy
-            current_ov_est, current_localizer_score = _apply_stabilization(
+            current_ov_est, current_localizer_score = apply_stabilization(
                 current_ov_est=current_ov_est,
                 current_score=current_localizer_score,
                 ov_est=ov_est,
@@ -1010,7 +588,7 @@ def prefix_rule_state_detect(
                 continue
             ov_est = localizer_seq[day_idx] if day_idx < len(localizer_seq) else None
             ov_score = score_seq[day_idx] if day_idx < len(score_seq) else None
-            current_ov_est, current_score = _apply_stabilization(
+            current_ov_est, current_score = apply_stabilization(
                 current_ov_est=current_ov_est,
                 current_score=current_score,
                 ov_est=ov_est,
