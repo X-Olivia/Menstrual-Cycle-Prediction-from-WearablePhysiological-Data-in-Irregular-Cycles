@@ -2,153 +2,190 @@
 
 ## 1. Scope
 
-This report summarizes the first completed research-stage experiments under the heterogeneity-sensitive methodology.
+This report summarizes research-stage experiments with an explicit **detect × countdown** matrix (`personalize-matrix`), alongside legacy baseline and L1–L3 personalization exports.
 
-Completed stages:
+Key structure:
+- **Matrix layout**: BaseDet vs PersDet (bounded refine, no imputation) × population vs `history_acl` countdown priors (`MATRIX_RESULTS_CSV`)
+- **Legacy baselines**: static `Calendar` and `History-only` (fixed cycle-length priors)
+- **Legacy diagnostics**: `L2a/L2b` ablations (Section 7) predate the matrix and are kept as appendix-style context
+- **Subgroup axes**: `stable_length_profile` joins cycle length and variability groups
 
-- history-only subgroup construction
-- subgroup baseline analysis
-- `L1` zero-shot detector calibration
-- `L2` one-shot detector calibration
-- `L3` few-shot detector calibration
+Primary subgroup axes:
+- `cycle_length_level_group` (short, typical, long)
+- `cycle_variability_group` (low, medium, high)
+- `stable_length_profile` (shifted-but-stable analysis)
 
-Primary subgroup axes used here:
-
-- `cycle_length_level_group`
-- `cycle_variability_group`
+Subgroup labels are retrospective user-level phenotype labels used only for post hoc analysis.
+Cold-start cycles remain cold-start operationally: when no prior user history exists, detector personalization falls back to `L0 Population` and countdown priors fall back to the population default.
+Primary metrics below use trigger-gated post-ovulation anchors (`Triggered Ov+3`, `Triggered Ov+5`, `Triggered Ov+10`) and `PostTrigger`.
+Fixed anchors (`AllAnchors Ov+5`, `AllAnchors Ov+10`) are retained as secondary physiology-aligned comparators.
+MAE metrics below are shown as `mean [95% bootstrap CI]` using 2000 resamples within each reported cell.
 
 ## 2. Main Findings
 
-### 2.1 Wearable physiology is not uniformly useful
+### 2.1 Does wearable physiology provide gain beyond history?
 
-The current strict-prefix wearable baseline (`L0 Population`) helps some subgroups substantially more than others.
+Wearable physiology (`L0 Population`) is compared against a static population-only `Calendar` and a static `History-only` personalized baseline.
 
-Most visible gains appear in:
+### 2.2 Detect × countdown matrix (headline design)
 
-- shifted cycle-length groups (`short`, `long`)
-- `medium-variability` users
-- the small `high-variability` subgroup
+The `personalize-matrix` pipeline evaluates **BaseDet+PopCount** vs **BaseDet+HistACLCount** and **PersDet+PopCount** vs **PersDet+HistACLCount**, plus static reference rows aligned to Calendar / history-only countdowns. Section 3 shows the **overall** slice; per-subgroup tables are in `MATRIX_RESULTS_CSV` / `MATRIX_RESULTS_MD`.
 
-The weakest gain appears in:
+### 2.3 Legacy L2 diagnostic ablations (appendix context)
 
-- `low-variability` users, where wearable performance is nearly identical to Calendar on `PostOvDays`
+The `L2a` (localizer-only) and `L2b` (temperature-evidence-only) variants predate the matrix; they decompose one-shot personalization and are summarized in Section 7.
 
-### 2.2 Current detector personalization does not improve results
+## 3. Matrix: overall (`all-labeled`)
 
-At this stage:
+| Method               |   Cycles |   Users | Triggered Ov+3 MAE [95% CI]   |   Triggered Ov+3 ±3d | Triggered Ov+5 MAE [95% CI]   |   Triggered Ov+5 ±3d | Triggered Ov+10 MAE [95% CI]   |   Triggered Ov+10 ±3d | PostTrigger MAE [95% CI]   |   PostTrigger ±3d | AllAnchors Ov+3 MAE [95% CI]   | AllAnchors Ov+10 MAE [95% CI]   |   Detected Rate |   Latency |
+|:---------------------|---------:|--------:|:------------------------------|---------------------:|:------------------------------|---------------------:|:-------------------------------|----------------------:|:---------------------------|------------------:|:-------------------------------|:--------------------------------|----------------:|----------:|
+| Matrix: Ref Calendar |       79 |      37 | NA                            |              nan     | NA                            |              nan     | NA                             |               nan     | NA                         |           nan     | 3.734 [3.038, 4.494]           | 3.843 [3.143, 4.600]            |           0     |   nan     |
+| Matrix: Ref HistACL  |       79 |      37 | NA                            |              nan     | NA                            |              nan     | NA                             |               nan     | NA                         |           nan     | 4.320 [3.507, 5.179]           | 4.492 [3.610, 5.441]            |           0     |   nan     |
+| Matrix: Base+Pop     |       79 |      37 | 4.390 [3.515, 5.216]          |                0.261 | 3.045 [2.337, 3.740]          |                0.541 | 1.612 [1.279, 1.931]           |                 0.844 | 2.985 [2.769, 3.201]       |             0.626 | 3.389 [2.791, 3.973]           | 1.850 [1.486, 2.224]            |           0.975 |     5.013 |
+| Matrix: Base+HistACL |       79 |      37 | 4.390 [3.491, 5.196]          |                0.261 | 3.045 [2.346, 3.749]          |                0.541 | 1.612 [1.316, 1.934]           |                 0.844 | 2.985 [2.775, 3.199]       |             0.626 | 3.389 [2.780, 4.017]           | 1.850 [1.497, 2.229]            |           0.975 |     5.013 |
+| Matrix: Pers+Pop     |       79 |      37 | 4.359 [3.501, 5.172]          |                0.261 | 3.022 [2.333, 3.705]          |                0.541 | 1.583 [1.274, 1.883]           |                 0.844 | 2.976 [2.760, 3.204]       |             0.631 | 3.392 [2.766, 4.055]           | 1.889 [1.547, 2.254]            |           0.975 |     5.013 |
+| Matrix: Pers+HistACL |       79 |      37 | 4.359 [3.508, 5.186]          |                0.261 | 3.022 [2.316, 3.689]          |                0.541 | 1.583 [1.265, 1.894]           |                 0.844 | 2.976 [2.780, 3.205]       |             0.631 | 3.392 [2.742, 4.043]           | 1.889 [1.536, 2.275]            |           0.975 |     5.013 |
 
-- `L1` makes no effective change
-- `L2` generally worsens performance
-- `L3` also generally worsens performance
+## 4. Overall comparison (non-matrix experiments)
 
-This means detector personalization should not be assumed to be beneficial. In the current implementation, personalization is either neutral (`L1`) or harmful (`L2/L3`).
+| Method                |   Cycles |   Users | Triggered Ov+3 MAE [95% CI]   |   Triggered Ov+3 ±3d | Triggered Ov+5 MAE [95% CI]   |   Triggered Ov+5 ±3d | Triggered Ov+10 MAE [95% CI]   |   Triggered Ov+10 ±3d | PostTrigger MAE [95% CI]   |   PostTrigger ±3d | AllAnchors Ov+3 MAE [95% CI]   | AllAnchors Ov+10 MAE [95% CI]   |   Detected Rate |   Latency |
+|:----------------------|---------:|--------:|:------------------------------|---------------------:|:------------------------------|---------------------:|:-------------------------------|----------------------:|:---------------------------|------------------:|:-------------------------------|:--------------------------------|----------------:|----------:|
+| Calendar (Static)     |       79 |      37 | NA                            |              nan     | NA                            |              nan     | NA                             |               nan     | NA                         |           nan     | 3.734 [3.051, 4.456]           | 3.843 [3.086, 4.686]            |           0     |   nan     |
+| History-only (Static) |       79 |      37 | NA                            |              nan     | NA                            |              nan     | NA                             |               nan     | NA                         |           nan     | 4.320 [3.487, 5.214]           | 4.492 [3.609, 5.434]            |           0     |   nan     |
+| L0 Population         |       79 |      37 | 4.390 [3.466, 5.286]          |                0.261 | 3.045 [2.370, 3.740]          |                0.541 | 1.612 [1.312, 1.941]           |                 0.844 | 2.985 [2.771, 3.204]       |             0.626 | 3.389 [2.801, 4.049]           | 1.850 [1.504, 2.229]            |           0.975 |     5.013 |
+| L1 Zero-shot          |       79 |      37 | 4.390 [3.589, 5.238]          |                0.261 | 3.045 [2.388, 3.768]          |                0.541 | 1.612 [1.313, 1.932]           |                 0.844 | 2.985 [2.781, 3.212]       |             0.626 | 3.389 [2.784, 3.997]           | 1.850 [1.511, 2.212]            |           0.975 |     5.013 |
+| L2 One-shot           |       79 |      37 | 3.782 [3.061, 4.546]          |                0.389 | 2.863 [2.282, 3.465]          |                0.583 | 1.591 [1.301, 1.896]           |                 0.846 | 3.148 [2.932, 3.361]       |             0.608 | 3.389 [2.775, 4.009]           | 1.850 [1.495, 2.223]            |           0.975 |     3.61  |
+| L2a LocalizerOnly     |       79 |      37 | 3.652 [2.914, 4.336]          |                0.405 | 2.634 [2.073, 3.221]          |                0.648 | 1.591 [1.287, 1.896]           |                 0.846 | 3.388 [3.176, 3.606]       |             0.588 | 3.389 [2.781, 4.043]           | 1.850 [1.516, 2.221]            |           0.975 |     2.688 |
+| L2b TempOnly          |       79 |      37 | 3.587 [2.972, 4.214]          |                0.407 | 2.695 [2.173, 3.251]          |                0.629 | 1.591 [1.301, 1.925]           |                 0.846 | 3.408 [3.214, 3.606]       |             0.575 | 3.389 [2.806, 3.984]           | 1.850 [1.507, 2.235]            |           0.975 |     0.831 |
+| L3 Few-shot           |       79 |      37 | 4.031 [3.131, 4.808]          |                0.31  | 2.849 [2.204, 3.522]          |                0.581 | 1.563 [1.265, 1.872]           |                 0.846 | 3.176 [2.960, 3.401]       |             0.61  | 3.392 [2.794, 3.980]           | 1.889 [1.536, 2.270]            |           0.975 |     4.13  |
 
-### 2.3 Current evidence supports the wearable subgroup claim, but not a positive personalization claim
+## 5. Baseline Comparison: Wearable vs. History vs. Calendar
 
-The current results support the paper's primary wearable-benefit claim much more clearly than any positive personalization claim.
-
-- primary claim supported: wearable physiology helps selectively across irregularity profiles
-- secondary personalization claim not supported: current personalization does not improve harder subgroups and is not yet a positive finding
-
-## 3. Wearable Gain over Calendar by Subgroup
-
-| subgroup_family          | subgroup_name      |   calendar_post_ov |   l0_post_ov |   wearable_gain_post_ov |   l0_post_trigger |   l0_ov_first |   l0_detect_rate |
-|:-------------------------|:-------------------|-------------------:|-------------:|------------------------:|------------------:|--------------:|-----------------:|
-| cycle_length_level_group | long               |              6.465 |        4.802 |                   1.663 |             3.189 |         3.5   |            1     |
-| cycle_length_level_group | short              |              9.56  |        3.901 |                   5.658 |             2.48  |         3.333 |            0.75  |
-| cycle_length_level_group | typical            |              3.065 |        2.764 |                   0.301 |             2.677 |         3.233 |            0.977 |
-| cycle_variability_group  | high-variability   |              6.418 |        3.643 |                   2.775 |             1.765 |         3.5   |            1     |
-| cycle_variability_group  | low-variability    |              2.589 |        2.588 |                   0.001 |             2.748 |         2.739 |            1     |
-| cycle_variability_group  | medium-variability |              5.721 |        2.974 |                   2.747 |             3.244 |         4.25  |            1     |
+| Family                   | Subgroup           |   Calendar AllAnchors Ov+3 MAE |   Calendar AllAnchors Ov+10 MAE |   History-only AllAnchors Ov+3 MAE |   History-only AllAnchors Ov+10 MAE |   L0 AllAnchors Ov+3 MAE |   L0 AllAnchors Ov+10 MAE |   Gain vs Calendar Ov+3 (AllAnchors) |   Gain vs Calendar (AllAnchors) |   Gain vs History Ov+3 (AllAnchors) |   Gain vs History (AllAnchors) |
+|:-------------------------|:-------------------|-------------------------------:|--------------------------------:|-----------------------------------:|------------------------------------:|-------------------------:|--------------------------:|-------------------------------------:|--------------------------------:|------------------------------------:|-------------------------------:|
+| cycle_length_level_group | long               |                          8.571 |                           8.571 |                             10.286 |                              10.286 |                    6.058 |                     1.325 |                                2.513 |                           7.246 |                               4.228 |                          8.961 |
+| cycle_length_level_group | short              |                          5     |                           5     |                              2.75  |                               2.75  |                    5     |                     4.202 |                                0     |                           0.798 |                              -2.25  |                         -1.452 |
+| cycle_length_level_group | typical            |                          3.214 |                           3.262 |                              3.768 |                               3.884 |                    3.076 |                     1.833 |                                0.138 |                           1.429 |                               0.692 |                          2.051 |
+| cycle_variability_group  | high-variability   |                          5.833 |                           7     |                              8.692 |                              10.43  |                    4.833 |                     1.087 |                                1     |                           5.913 |                               3.859 |                          9.343 |
+| cycle_variability_group  | low-variability    |                          2.983 |                           3     |                              3.201 |                               3.231 |                    2.782 |                     1.977 |                                0.201 |                           1.023 |                               0.419 |                          1.254 |
+| cycle_variability_group  | medium-variability |                          5.556 |                           5.5   |                              7.389 |                               7.562 |                    4.479 |                     1.402 |                                1.077 |                           4.098 |                               2.91  |                          6.16  |
+| stable_length_profile    | long-stable        |                          8     |                           8     |                              8     |                               8     |                    4.468 |                     1.019 |                                3.532 |                           6.981 |                               3.532 |                          6.981 |
+| stable_length_profile    | short-stable       |                          5     |                           5     |                              2.75  |                               2.75  |                    5     |                     4.202 |                                0     |                           0.798 |                              -2.25  |                         -1.452 |
+| stable_length_profile    | typical-stable     |                          2.623 |                           2.587 |                              2.946 |                               2.941 |                    2.602 |                     1.942 |                                0.021 |                           0.645 |                               0.344 |                          0.999 |
 
 Interpretation:
+- `wearable_gain_vs_hist_all > 0` indicates wearable signal adds value beyond simple history-only prediction on the late fixed anchor comparator.
 
-- `wearable_gain_post_ov > 0` means the wearable baseline reduces `PostOvDays MAE` relative to Calendar
-- the largest gains are currently observed in `short`, `long`, and `medium-variability` groups
-- `low-variability` shows almost no gain, suggesting Calendar remains competitive there
+## 6. Personalization Comparison by Subgroup
 
-## 4. Personalization Comparison by Subgroup
+### Subgroup: cycle_length_level_group
 
-### cycle_length_level_group
+| Subgroup   | Method        | Triggered Ov+3 MAE [95% CI]   |   Triggered Ov+3 ±3d | Triggered Ov+5 MAE [95% CI]   |   Triggered Ov+5 ±3d | Triggered Ov+10 MAE [95% CI]   |   Triggered Ov+10 ±3d | PostTrigger MAE [95% CI]   |   PostTrigger ±3d | AllAnchors Ov+3 MAE [95% CI]   | AllAnchors Ov+10 MAE [95% CI]   |   Detected Rate |   Latency |
+|:-----------|:--------------|:------------------------------|---------------------:|:------------------------------|---------------------:|:-------------------------------|----------------------:|:---------------------------|------------------:|:-------------------------------|:--------------------------------|----------------:|----------:|
+| long       | L0 Population | 5.457 [4.540, 6.276]          |                0     | 3.847 [2.675, 5.019]          |                0.333 | 1.960 [0.870, 3.114]           |                 0.714 | 4.849 [4.060, 5.712]       |             0.446 | 6.058 [3.544, 8.571]           | 1.325 [0.680, 2.130]            |           1     |    -0.429 |
+| long       | L1 Zero-shot  | 5.457 [4.539, 6.293]          |                0     | 3.847 [2.675, 5.019]          |                0.333 | 1.960 [0.935, 3.063]           |                 0.714 | 4.849 [4.103, 5.659]       |             0.446 | 6.058 [3.486, 8.573]           | 1.325 [0.688, 2.127]            |           1     |    -0.429 |
+| long       | L2 One-shot   | 5.457 [4.540, 6.293]          |                0     | 3.847 [2.630, 5.019]          |                0.333 | 1.960 [0.870, 3.104]           |                 0.714 | 4.849 [4.066, 5.665]       |             0.446 | 6.058 [3.601, 8.429]           | 1.325 [0.677, 2.124]            |           1     |    -0.429 |
+| long       | L3 Few-shot   | 5.334 [4.376, 6.276]          |                0     | 3.726 [2.587, 4.932]          |                0.333 | 1.960 [0.870, 3.116]           |                 0.714 | 4.828 [4.033, 5.648]       |             0.446 | 6.058 [3.571, 8.429]           | 1.410 [0.688, 2.235]            |           1     |    -0.429 |
+| short      | L0 Population | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.909, 5.557]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| short      | L1 Zero-shot  | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.886, 5.568]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| short      | L2 One-shot   | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.886, 5.568]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| short      | L3 Few-shot   | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.886, 5.568]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| typical    | L0 Population | 4.094 [3.043, 5.144]          |                0.333 | 2.890 [2.126, 3.720]          |                0.581 | 1.472 [1.179, 1.788]           |                 0.891 | 2.602 [2.408, 2.799]       |             0.668 | 3.076 [2.482, 3.754]           | 1.833 [1.464, 2.239]            |           0.971 |     5.441 |
+| typical    | L1 Zero-shot  | 4.094 [3.054, 5.080]          |                0.333 | 2.890 [2.111, 3.700]          |                0.581 | 1.472 [1.174, 1.779]           |                 0.891 | 2.602 [2.413, 2.798]       |             0.668 | 3.076 [2.455, 3.692]           | 1.833 [1.468, 2.230]            |           0.971 |     5.441 |
+| typical    | L2 One-shot   | 3.512 [2.728, 4.355]          |                0.452 | 2.722 [2.092, 3.389]          |                0.619 | 1.451 [1.169, 1.772]           |                 0.893 | 2.860 [2.658, 3.063]       |             0.639 | 3.076 [2.481, 3.702]           | 1.833 [1.471, 2.241]            |           0.971 |     3.853 |
+| typical    | L3 Few-shot   | 3.760 [2.782, 4.711]          |                0.375 | 2.706 [1.992, 3.453]          |                0.622 | 1.418 [1.136, 1.722]           |                 0.893 | 2.876 [2.657, 3.092]       |             0.643 | 3.079 [2.438, 3.757]           | 1.868 [1.494, 2.254]            |           0.971 |     4.441 |
 
-| subgroup_name   | method_short   |   n_cycles |   n_users |   post_ov_mae |   post_trigger_mae |   ov_first_mae |   ov_final_mae |   detected_cycle_rate |   latency_days_mean |
-|:----------------|:---------------|-----------:|----------:|--------------:|-------------------:|---------------:|---------------:|----------------------:|--------------------:|
-| long            | L0 Population  |          4 |         5 |         4.802 |              3.189 |          3.5   |          3.5   |                 1     |               4.25  |
-| short           | L0 Population  |          4 |         5 |         3.901 |              2.48  |          3.333 |          5     |                 0.75  |               5.667 |
-| typical         | L0 Population  |         44 |        28 |         2.764 |              2.677 |          3.233 |          4.837 |                 0.977 |               6.07  |
-| long            | L1 Zero-shot   |          4 |         5 |         4.802 |              3.189 |          3.5   |          3.5   |                 1     |               4.25  |
-| short           | L1 Zero-shot   |          4 |         5 |         3.901 |              2.48  |          3.333 |          5     |                 0.75  |               5.667 |
-| typical         | L1 Zero-shot   |         44 |        28 |         2.764 |              2.677 |          3.233 |          4.837 |                 0.977 |               6.07  |
-| long            | L2 One-shot    |          4 |         5 |         4.802 |              3.189 |          3.5   |          3.5   |                 1     |               4.25  |
-| short           | L2 One-shot    |          4 |         5 |         3.901 |              2.48  |          3.333 |          5     |                 0.75  |               5.667 |
-| typical         | L2 One-shot    |         44 |        28 |         3.119 |              3.568 |          3.814 |          4.837 |                 0.977 |               3.488 |
-| long            | L3 Few-shot    |          4 |         5 |         4.802 |              3.189 |          3.5   |          3.5   |                 1     |               4.25  |
-| short           | L3 Few-shot    |          4 |         5 |         3.901 |              2.48  |          3.333 |          5     |                 0.75  |               5.667 |
-| typical         | L3 Few-shot    |         44 |        28 |         2.992 |              3.422 |          3.791 |          4.837 |                 0.977 |               4.465 |
+### Subgroup: cycle_variability_group
 
-### cycle_variability_group
+| Subgroup           | Method        | Triggered Ov+3 MAE [95% CI]   |   Triggered Ov+3 ±3d | Triggered Ov+5 MAE [95% CI]   |   Triggered Ov+5 ±3d | Triggered Ov+10 MAE [95% CI]   |   Triggered Ov+10 ±3d | PostTrigger MAE [95% CI]   |   PostTrigger ±3d | AllAnchors Ov+3 MAE [95% CI]   | AllAnchors Ov+10 MAE [95% CI]   |   Detected Rate |   Latency |
+|:-------------------|:--------------|:------------------------------|---------------------:|:------------------------------|---------------------:|:-------------------------------|----------------------:|:---------------------------|------------------:|:-------------------------------|:--------------------------------|----------------:|----------:|
+| high-variability   | L0 Population | 5.860 [4.515, 7.205]          |                0     | 4.900 [2.572, 7.228]          |                0.25  | 1.222 [0.437, 2.007]           |                 1     | 3.530 [2.789, 4.363]       |             0.609 | 4.833 [2.333, 7.000]           | 1.087 [0.315, 2.069]            |           1     |     2.833 |
+| high-variability   | L1 Zero-shot  | 5.860 [4.515, 7.205]          |                0     | 4.900 [2.572, 7.228]          |                0.25  | 1.222 [0.437, 1.940]           |                 1     | 3.530 [2.755, 4.338]       |             0.609 | 4.833 [2.333, 7.000]           | 1.087 [0.315, 2.045]            |           1     |     2.833 |
+| high-variability   | L2 One-shot   | 5.906 [4.515, 7.205]          |                0     | 4.900 [2.572, 7.228]          |                0.25  | 1.222 [0.446, 2.007]           |                 1     | 4.391 [3.500, 5.348]       |             0.534 | 4.833 [2.333, 7.167]           | 1.087 [0.308, 2.008]            |           1     |     1.333 |
+| high-variability   | L3 Few-shot   | 5.906 [4.515, 7.205]          |                0     | 4.900 [2.572, 7.228]          |                0.25  | 1.222 [0.437, 2.007]           |                 1     | 3.968 [3.213, 4.775]       |             0.549 | 4.833 [2.333, 7.004]           | 1.087 [0.315, 2.069]            |           1     |     1.667 |
+| low-variability    | L0 Population | 3.535 [2.320, 4.766]          |                0.462 | 2.436 [1.608, 3.338]          |                0.682 | 1.628 [1.246, 2.025]           |                 0.826 | 2.607 [2.385, 2.831]       |             0.656 | 2.782 [2.198, 3.454]           | 1.977 [1.555, 2.436]            |           0.966 |     5.839 |
+| low-variability    | L1 Zero-shot  | 3.535 [2.305, 4.825]          |                0.462 | 2.436 [1.567, 3.348]          |                0.682 | 1.628 [1.257, 2.013]           |                 0.826 | 2.607 [2.393, 2.824]       |             0.656 | 2.782 [2.160, 3.426]           | 1.977 [1.542, 2.425]            |           0.966 |     5.839 |
+| low-variability    | L2 One-shot   | 3.005 [2.120, 3.911]          |                0.56  | 2.374 [1.725, 3.088]          |                0.697 | 1.599 [1.250, 1.985]           |                 0.83  | 2.787 [2.580, 3.004]       |             0.634 | 2.782 [2.161, 3.406]           | 1.977 [1.541, 2.437]            |           0.966 |     4.071 |
+| low-variability    | L3 Few-shot   | 3.105 [1.992, 4.177]          |                0.5   | 2.265 [1.524, 3.066]          |                0.714 | 1.560 [1.207, 1.962]           |                 0.83  | 2.870 [2.640, 3.106]       |             0.636 | 2.786 [2.216, 3.457]           | 2.030 [1.609, 2.483]            |           0.966 |     4.75  |
+| medium-variability | L0 Population | 5.749 [4.000, 6.781]          |                0     | 3.193 [1.677, 4.552]          |                0.5   | 1.133 [0.551, 1.859]           |                 1     | 3.390 [2.644, 4.203]       |             0.652 | 4.479 [2.290, 6.444]           | 1.402 [0.690, 2.159]            |           1     |     3.222 |
+| medium-variability | L1 Zero-shot  | 5.749 [4.000, 6.781]          |                0     | 3.193 [1.789, 4.553]          |                0.5   | 1.133 [0.527, 1.818]           |                 1     | 3.390 [2.634, 4.165]       |             0.652 | 4.479 [2.402, 6.556]           | 1.402 [0.744, 2.132]            |           1     |     3.222 |
+| medium-variability | L2 One-shot   | 5.749 [4.000, 6.781]          |                0     | 3.193 [1.789, 4.550]          |                0.5   | 1.133 [0.523, 1.816]           |                 1     | 3.390 [2.607, 4.197]       |             0.652 | 4.479 [2.547, 6.444]           | 1.402 [0.708, 2.089]            |           1     |     3.222 |
+| medium-variability | L3 Few-shot   | 5.749 [4.000, 6.781]          |                0     | 3.193 [1.776, 4.553]          |                0.5   | 1.133 [0.541, 1.837]           |                 1     | 3.390 [2.679, 4.195]       |             0.652 | 4.479 [2.444, 6.444]           | 1.402 [0.711, 2.180]            |           1     |     3.222 |
 
-| subgroup_name      | method_short   |   n_cycles |   n_users |   post_ov_mae |   post_trigger_mae |   ov_first_mae |   ov_final_mae |   detected_cycle_rate |   latency_days_mean |
-|:-------------------|:---------------|-----------:|----------:|--------------:|-------------------:|---------------:|---------------:|----------------------:|--------------------:|
-| high-variability   | L0 Population  |          2 |         1 |         3.643 |              1.765 |          3.5   |          5     |                     1 |               6.5   |
-| low-variability    | L0 Population  |         23 |        17 |         2.588 |              2.748 |          2.739 |          4.652 |                     1 |               6.304 |
-| medium-variability | L0 Population  |          4 |         6 |         2.974 |              3.244 |          4.25  |          3.5   |                     1 |               3.25  |
-| high-variability   | L1 Zero-shot   |          2 |         1 |         3.643 |              1.765 |          3.5   |          5     |                     1 |               6.5   |
-| low-variability    | L1 Zero-shot   |         23 |        17 |         2.588 |              2.748 |          2.739 |          4.652 |                     1 |               6.304 |
-| medium-variability | L1 Zero-shot   |          4 |         6 |         2.974 |              3.244 |          4.25  |          3.5   |                     1 |               3.25  |
-| high-variability   | L2 One-shot    |          2 |         1 |         3.85  |              5.378 |          6     |          5     |                     1 |               1.5   |
-| low-variability    | L2 One-shot    |         23 |        17 |         2.927 |              3.388 |          3.174 |          4.652 |                     1 |               4.043 |
-| medium-variability | L2 One-shot    |          4 |         6 |         3.592 |              4.167 |          5.5   |          3.5   |                     1 |               1.5   |
-| high-variability   | L3 Few-shot    |          2 |         1 |         3.85  |              4.192 |          6     |          5     |                     1 |               2.5   |
-| low-variability    | L3 Few-shot    |         23 |        17 |         2.899 |              3.521 |          3.348 |          4.652 |                     1 |               4.043 |
-| medium-variability | L3 Few-shot    |          4 |         6 |         3.592 |              4.44  |          5.5   |          3.5   |                     1 |               1     |
+### Subgroup: stable_length_profile
 
-## 5. Interpretation by Research Question
+| Subgroup       | Method        | Triggered Ov+3 MAE [95% CI]   |   Triggered Ov+3 ±3d | Triggered Ov+5 MAE [95% CI]   |   Triggered Ov+5 ±3d | Triggered Ov+10 MAE [95% CI]   |   Triggered Ov+10 ±3d | PostTrigger MAE [95% CI]   |   PostTrigger ±3d | AllAnchors Ov+3 MAE [95% CI]   | AllAnchors Ov+10 MAE [95% CI]   |   Detected Rate |   Latency |
+|:---------------|:--------------|:------------------------------|---------------------:|:------------------------------|---------------------:|:-------------------------------|----------------------:|:---------------------------|------------------:|:-------------------------------|:--------------------------------|----------------:|----------:|
+| long-stable    | L0 Population | 4.278 [3.840, 4.716]          |                0     | 2.630 [1.716, 3.855]          |                0.667 | 0.605 [0.000, 1.086]           |                 1     | 4.084 [3.120, 5.045]       |             0.488 | 4.468 [2.405, 6.000]           | 1.019 [0.000, 2.099]            |           1     |    -0.333 |
+| long-stable    | L1 Zero-shot  | 4.278 [3.840, 4.716]          |                0     | 2.630 [1.716, 3.855]          |                0.667 | 0.605 [0.000, 1.086]           |                 1     | 4.084 [3.154, 5.076]       |             0.488 | 4.468 [2.405, 6.000]           | 1.019 [0.000, 2.099]            |           1     |    -0.333 |
+| long-stable    | L2 One-shot   | 4.278 [3.840, 4.716]          |                0     | 2.630 [1.716, 3.855]          |                0.667 | 0.605 [0.000, 1.086]           |                 1     | 4.084 [3.122, 5.039]       |             0.488 | 4.468 [3.270, 6.000]           | 1.019 [0.000, 2.099]            |           1     |    -0.333 |
+| long-stable    | L3 Few-shot   | 3.972 [3.840, 4.103]          |                0     | 2.388 [1.716, 3.128]          |                0.667 | 0.605 [0.000, 1.086]           |                 1     | 4.032 [3.123, 5.037]       |             0.488 | 4.468 [2.405, 6.000]           | 1.218 [0.000, 2.696]            |           1     |    -0.333 |
+| short-stable   | L0 Population | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.909, 5.568]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| short-stable   | L1 Zero-shot  | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.908, 5.568]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| short-stable   | L2 One-shot   | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.886, 5.557]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| short-stable   | L3 Few-shot   | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.886, 5.568]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| typical-stable | L0 Population | 3.400 [1.973, 4.884]          |                0.545 | 2.405 [1.435, 3.471]          |                0.684 | 1.576 [1.224, 1.950]           |                 0.854 | 2.403 [2.189, 2.612]       |             0.685 | 2.602 [1.990, 3.288]           | 1.942 [1.492, 2.437]            |           0.962 |     6.059 |
+| typical-stable | L1 Zero-shot  | 3.400 [1.967, 4.918]          |                0.545 | 2.405 [1.456, 3.411]          |                0.684 | 1.576 [1.230, 1.980]           |                 0.854 | 2.403 [2.193, 2.620]       |             0.685 | 2.602 [1.989, 3.249]           | 1.942 [1.486, 2.455]            |           0.962 |     6.059 |
+| typical-stable | L2 One-shot   | 2.895 [2.005, 3.836]          |                0.609 | 2.348 [1.628, 3.142]          |                0.7   | 1.545 [1.194, 1.935]           |                 0.857 | 2.647 [2.451, 2.855]       |             0.654 | 2.602 [1.990, 3.285]           | 1.942 [1.505, 2.421]            |           0.962 |     4.118 |
+| typical-stable | L3 Few-shot   | 2.996 [1.791, 4.274]          |                0.562 | 2.250 [1.429, 3.165]          |                0.72  | 1.501 [1.148, 1.877]           |                 0.857 | 2.731 [2.496, 2.982]       |             0.659 | 2.607 [1.984, 3.283]           | 1.988 [1.537, 2.472]            |           0.962 |     4.863 |
 
-### Q1. Which irregularity profiles are hardest?
+## 7. Legacy diagnostic ablations (L2 variants)
 
-Under Calendar, the hardest currently observed groups are:
+### Diagnostic: cycle_length_level_group
 
-- `short` cycle-length level
-- `long` cycle-length level
-- `medium-variability` and `high-variability`
+| Subgroup   | Method            | Triggered Ov+3 MAE [95% CI]   |   Triggered Ov+3 ±3d | Triggered Ov+5 MAE [95% CI]   |   Triggered Ov+5 ±3d | Triggered Ov+10 MAE [95% CI]   |   Triggered Ov+10 ±3d | PostTrigger MAE [95% CI]   |   PostTrigger ±3d | AllAnchors Ov+3 MAE [95% CI]   | AllAnchors Ov+10 MAE [95% CI]   |   Detected Rate |   Latency |
+|:-----------|:------------------|:------------------------------|---------------------:|:------------------------------|---------------------:|:-------------------------------|----------------------:|:---------------------------|------------------:|:-------------------------------|:--------------------------------|----------------:|----------:|
+| long       | L2 One-shot       | 5.457 [4.540, 6.293]          |                0     | 3.847 [2.630, 5.019]          |                0.333 | 1.960 [0.870, 3.104]           |                 0.714 | 4.849 [4.066, 5.665]       |             0.446 | 6.058 [3.601, 8.429]           | 1.325 [0.677, 2.124]            |           1     |    -0.429 |
+| long       | L2a LocalizerOnly | 5.457 [4.501, 6.293]          |                0     | 3.618 [2.556, 4.721]          |                0.429 | 1.960 [0.829, 3.104]           |                 0.714 | 4.948 [4.175, 5.731]       |             0.439 | 6.058 [3.517, 8.571]           | 1.325 [0.688, 2.133]            |           1     |    -1.286 |
+| long       | L2b TempOnly      | 5.457 [4.500, 6.293]          |                0     | 3.618 [2.567, 4.683]          |                0.429 | 1.960 [0.884, 3.116]           |                 0.714 | 4.948 [4.124, 5.800]       |             0.439 | 6.058 [3.517, 8.486]           | 1.325 [0.682, 2.107]            |           1     |    -1.286 |
+| short      | L2 One-shot       | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.886, 5.568]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| short      | L2a LocalizerOnly | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.505 [3.922, 5.139]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     8     |
+| short      | L2b TempOnly      | 5.000 [5.000, 5.000]          |                0     | 3.940 [3.940, 3.940]          |                0     | 4.225 [3.664, 4.786]           |                 0     | 4.526 [4.147, 4.870]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     4     |
+| typical    | L2 One-shot       | 3.512 [2.728, 4.355]          |                0.452 | 2.722 [2.092, 3.389]          |                0.619 | 1.451 [1.169, 1.772]           |                 0.893 | 2.860 [2.658, 3.063]       |             0.639 | 3.076 [2.481, 3.702]           | 1.833 [1.471, 2.241]            |           0.971 |     3.853 |
+| typical    | L2a LocalizerOnly | 3.408 [2.636, 4.185]          |                0.459 | 2.488 [1.901, 3.088]          |                0.681 | 1.451 [1.163, 1.766]           |                 0.893 | 3.131 [2.923, 3.348]       |             0.618 | 3.076 [2.481, 3.728]           | 1.833 [1.483, 2.240]            |           0.971 |     2.941 |
+| typical    | L2b TempOnly      | 3.363 [2.693, 4.031]          |                0.458 | 2.553 [1.969, 3.154]          |                0.667 | 1.451 [1.152, 1.759]           |                 0.893 | 3.186 [3.000, 3.370]       |             0.604 | 3.076 [2.457, 3.713]           | 1.833 [1.454, 2.241]            |           0.971 |     0.956 |
 
-### Q2. Where do wearable signals help?
+### Diagnostic: cycle_variability_group
 
-They help most where Calendar assumptions are structurally weakest:
+| Subgroup           | Method            | Triggered Ov+3 MAE [95% CI]   |   Triggered Ov+3 ±3d | Triggered Ov+5 MAE [95% CI]   |   Triggered Ov+5 ±3d | Triggered Ov+10 MAE [95% CI]   |   Triggered Ov+10 ±3d | PostTrigger MAE [95% CI]   |   PostTrigger ±3d | AllAnchors Ov+3 MAE [95% CI]   | AllAnchors Ov+10 MAE [95% CI]   |   Detected Rate |   Latency |
+|:-------------------|:------------------|:------------------------------|---------------------:|:------------------------------|---------------------:|:-------------------------------|----------------------:|:---------------------------|------------------:|:-------------------------------|:--------------------------------|----------------:|----------:|
+| high-variability   | L2 One-shot       | 5.906 [4.515, 7.205]          |                0     | 4.900 [2.572, 7.228]          |                0.25  | 1.222 [0.446, 2.007]           |                  1    | 4.391 [3.500, 5.348]       |             0.534 | 4.833 [2.333, 7.167]           | 1.087 [0.308, 2.008]            |           1     |     1.333 |
+| high-variability   | L2a LocalizerOnly | 5.891 [3.900, 7.883]          |                0     | 3.982 [1.766, 6.397]          |                0.4   | 1.222 [0.437, 1.973]           |                  1    | 4.616 [3.760, 5.507]       |             0.526 | 4.833 [2.333, 7.000]           | 1.087 [0.315, 2.069]            |           1     |     0.5   |
+| high-variability   | L2b TempOnly      | 5.713 [4.120, 7.306]          |                0     | 4.119 [2.106, 6.101]          |                0.333 | 1.222 [0.446, 2.007]           |                  1    | 4.612 [3.839, 5.512]       |             0.482 | 4.833 [2.333, 7.004]           | 1.087 [0.315, 1.973]            |           1     |    -0.667 |
+| low-variability    | L2 One-shot       | 3.005 [2.120, 3.911]          |                0.56  | 2.374 [1.725, 3.088]          |                0.697 | 1.599 [1.250, 1.985]           |                  0.83 | 2.787 [2.580, 3.004]       |             0.634 | 2.782 [2.161, 3.406]           | 1.977 [1.541, 2.437]            |           0.966 |     4.071 |
+| low-variability    | L2a LocalizerOnly | 2.884 [2.105, 3.663]          |                0.567 | 2.179 [1.567, 2.847]          |                0.757 | 1.599 [1.235, 1.985]           |                  0.83 | 3.139 [2.899, 3.370]       |             0.602 | 2.782 [2.186, 3.414]           | 1.977 [1.556, 2.482]            |           0.966 |     2.929 |
+| low-variability    | L2b TempOnly      | 3.006 [2.324, 3.734]          |                0.538 | 2.318 [1.719, 2.945]          |                0.721 | 1.599 [1.218, 1.990]           |                  0.83 | 3.220 [3.019, 3.420]       |             0.587 | 2.782 [2.185, 3.415]           | 1.977 [1.560, 2.450]            |           0.966 |     0.714 |
+| medium-variability | L2 One-shot       | 5.749 [4.000, 6.781]          |                0     | 3.193 [1.789, 4.550]          |                0.5   | 1.133 [0.523, 1.816]           |                  1    | 3.390 [2.607, 4.197]       |             0.652 | 4.479 [2.547, 6.444]           | 1.402 [0.708, 2.089]            |           1     |     3.222 |
+| medium-variability | L2a LocalizerOnly | 5.749 [4.000, 6.781]          |                0     | 3.057 [1.808, 4.272]          |                0.571 | 1.133 [0.526, 1.824]           |                  1    | 3.326 [2.581, 4.117]       |             0.659 | 4.479 [2.547, 6.556]           | 1.402 [0.720, 2.159]            |           1     |     3     |
+| medium-variability | L2b TempOnly      | 4.375 [2.651, 6.098]          |                0.2   | 2.800 [1.570, 4.077]          |                0.625 | 1.133 [0.527, 1.787]           |                  1    | 3.200 [2.533, 3.900]       |             0.66  | 4.479 [2.333, 6.444]           | 1.402 [0.726, 2.121]            |           1     |     1.667 |
 
-- users with shifted but stable cycle length
-- users with non-trivial between-cycle variability
+### Diagnostic: stable_length_profile
 
-### Q3. Where does personalization help?
+| Subgroup       | Method            | Triggered Ov+3 MAE [95% CI]   |   Triggered Ov+3 ±3d | Triggered Ov+5 MAE [95% CI]   |   Triggered Ov+5 ±3d | Triggered Ov+10 MAE [95% CI]   |   Triggered Ov+10 ±3d | PostTrigger MAE [95% CI]   |   PostTrigger ±3d | AllAnchors Ov+3 MAE [95% CI]   | AllAnchors Ov+10 MAE [95% CI]   |   Detected Rate |   Latency |
+|:---------------|:------------------|:------------------------------|---------------------:|:------------------------------|---------------------:|:-------------------------------|----------------------:|:---------------------------|------------------:|:-------------------------------|:--------------------------------|----------------:|----------:|
+| long-stable    | L2 One-shot       | 4.278 [3.840, 4.716]          |                0     | 2.630 [1.716, 3.855]          |                0.667 | 0.605 [0.000, 1.086]           |                 1     | 4.084 [3.122, 5.039]       |             0.488 | 4.468 [3.270, 6.000]           | 1.019 [0.000, 2.099]            |           1     |    -0.333 |
+| long-stable    | L2a LocalizerOnly | 4.278 [3.840, 4.716]          |                0     | 2.630 [1.716, 3.855]          |                0.667 | 0.605 [0.000, 1.086]           |                 1     | 4.580 [3.564, 5.604]       |             0.444 | 4.468 [2.405, 6.000]           | 1.019 [0.000, 2.099]            |           1     |    -1.667 |
+| long-stable    | L2b TempOnly      | 4.278 [3.840, 4.716]          |                0     | 2.630 [1.716, 3.855]          |                0.667 | 0.605 [0.000, 1.086]           |                 1     | 4.580 [3.635, 5.564]       |             0.444 | 4.468 [2.405, 6.000]           | 1.019 [0.000, 2.099]            |           1     |    -1.667 |
+| short-stable   | L2 One-shot       | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.727 [3.886, 5.557]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     9.5   |
+| short-stable   | L2a LocalizerOnly | NA                            |              nan     | NA                            |              nan     | 4.225 [3.664, 4.786]           |                 0     | 4.505 [3.890, 5.146]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     8     |
+| short-stable   | L2b TempOnly      | 5.000 [5.000, 5.000]          |                0     | 3.940 [3.940, 3.940]          |                0     | 4.225 [3.664, 4.786]           |                 0     | 4.526 [4.142, 4.873]       |             0     | 5.000 [5.000, 5.000]           | 4.202 [3.558, 4.847]            |           1     |     4     |
+| typical-stable | L2 One-shot       | 2.895 [2.005, 3.836]          |                0.609 | 2.348 [1.628, 3.142]          |                0.7   | 1.545 [1.194, 1.935]           |                 0.857 | 2.647 [2.451, 2.855]       |             0.654 | 2.602 [1.990, 3.285]           | 1.942 [1.505, 2.421]            |           0.962 |     4.118 |
+| typical-stable | L2a LocalizerOnly | 2.784 [1.931, 3.633]          |                0.607 | 2.139 [1.506, 2.850]          |                0.765 | 1.545 [1.186, 1.905]           |                 0.857 | 2.989 [2.737, 3.235]       |             0.626 | 2.602 [1.942, 3.310]           | 1.942 [1.499, 2.464]            |           0.962 |     3     |
+| typical-stable | L2b TempOnly      | 2.880 [2.102, 3.670]          |                0.583 | 2.252 [1.603, 2.927]          |                0.744 | 1.545 [1.170, 1.902]           |                 0.857 | 3.088 [2.875, 3.303]       |             0.612 | 2.602 [1.999, 3.279]           | 1.942 [1.502, 2.458]            |           0.962 |     0.725 |
 
-At the current implementation stage, personalization does not help. This is a meaningful negative result rather than a missing result.
+## 8. Interpretation by Research Question
 
-- `L1` is effectively neutral
-- `L2` and `L3` degrade the current baseline
+### Q1. Where do wearable signals help most?
+Check trigger-gated `Ov+3/Ov+5/Ov+10` as primary metrics in `shifted-but-stable` profiles; use all-anchor Ov+10 only as secondary comparator.
 
-### Q4. What does this imply for the paper?
+### Q2. Does simple history-only personalization help?
+Compare `History-only (Static)` vs `Calendar (Static)` in the baseline table.
 
-The paper can already support a strong claim that wearable physiology provides selective benefit across irregularity profiles.
+### Q3. How does detector-side refinement interact with countdown customization?
+In Section 3, compare `Matrix: Pers+Pop` vs `Matrix: Base+Pop`, and `Matrix: Pers+HistACL` vs `Matrix: Base+HistACL`, to read detect-side effects at fixed countdown settings.
+For historical context on one-shot degradation, still compare `L2` vs `L2a` vs `L2b` in Section 7.
 
-However, the detector-personalization claim must remain secondary and provisional. The current code does not yet support a positive personalization result.
-
-## 6. Methodological Cautions
-
-- subgroup sizes are still small in several cells, especially `high-variability`
-- current subgroup tables are useful for directional evidence, not strong final subgroup claims
-- `ovulatory-status` has not yet been incorporated into the main report and should remain secondary
-
-## 7. Immediate Next Step
-
-The next research step should not be to claim personalization works.
-
-Instead, it should be to:
-
-1. freeze subgroup reporting thresholds (`U_min`, `C_min`)
-2. keep the current wearable subgroup-baseline result as the main positive finding
-3. redesign detector personalization before making any stronger personalization claims
-
-In practical terms, the current evidence says:
-
-**wearable physiology already shows selective value; current detector personalization is currently a negative or null finding rather than a positive contribution.**
+## 9. Methodological Cautions
+- Some subgroup cells (e.g., `high-variability`) have very small sample sizes.
+- `PostOv` pooled metrics are still exported, but main interpretation should rely on fixed anchors rather than averaging all post-ovulation days together.
+- Detector inference and countdown evaluation remain strict-prefix; subgroup labels are retrospective analysis-only phenotypes.

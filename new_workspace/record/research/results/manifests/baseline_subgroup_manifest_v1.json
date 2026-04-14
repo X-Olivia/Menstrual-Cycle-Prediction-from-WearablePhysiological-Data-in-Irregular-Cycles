@@ -5,14 +5,55 @@
     "baseline_results_csv": "/Users/xujing/FYP/new_workspace/record/research/results/baseline_subgroup_analysis/baseline_subgroup_results_v1.csv",
     "baseline_results_md": "/Users/xujing/FYP/new_workspace/record/research/results/baseline_subgroup_analysis/baseline_subgroup_results_v1.md"
   },
+  "includes_overall_row": true,
   "methods": [
     "Calendar",
-    "PhaseCls-Temp+HR[RF-baseline]"
+    "HistoryPrior-Menses",
+    "PhaseCls-ENS-Temp+HR[Champion]"
   ],
-  "n_rows": 12,
+  "n_rows": 30,
+  "statistics": {
+    "bootstrap_ci_level": 0.95,
+    "bootstrap_n_resamples": 2000,
+    "metrics_with_ci": [
+      "ov_plus_3_triggered_mae",
+      "ov_plus_5_triggered_mae",
+      "ov_plus_10_triggered_mae",
+      "ov_plus_3_mae",
+      "ov_plus_5_mae",
+      "ov_plus_10_mae",
+      "post_ov_mae",
+      "post_trigger_mae",
+      "ov_first_mae",
+      "ov_final_mae"
+    ]
+  },
   "subgroup_families": [
     "cycle_length_level_group",
-    "cycle_variability_group"
+    "cycle_variability_group",
+    "stable_length_profile"
   ],
-  "subgroup_version": "v1"
+  "subgroup_version": "v2_retrospective_user_labels",
+  "wearable_reference": {
+    "group_name": "Temp+HR",
+    "key": "champion",
+    "localizer_cache_tag": "nightly_temperature_rhr_noct_hr_min",
+    "localizer_sigs": [
+      "nightly_temperature",
+      "rhr",
+      "noct_hr_min"
+    ],
+    "lookback_localize": 10,
+    "method_name": "PhaseCls-ENS-Temp+HR[Champion]",
+    "phase_kwargs": {
+      "localizer_smooth_window_m": 3,
+      "model_type": "rf",
+      "name_suffix": "[Champion]",
+      "phase_ensemble_models": [
+        "rf",
+        "hgb"
+      ],
+      "stabilization_policy": "score_smooth"
+    }
+  }
 }

@@ -1,0 +1,17 @@
+{
+  "among_adjust_days_vs_true_ov": {
+    "mean_abs_ov_day_change": 1.0188679245283019,
+    "n_abs_err_better": 27,
+    "n_abs_err_same": 0,
+    "n_abs_err_worse": 26,
+    "n_adjust_days": 53
+  },
+  "audit_version": "active_effect_v1",
+  "fraction_ready_cycles": 0.22784810126582278,
+  "level": "L3",
+  "n_adjust_days_total": 53,
+  "n_cycles_profile_ready": 18,
+  "n_cycles_with_any_adjust": 14,
+  "n_impute_days_total": 59,
+  "n_labeled_cycles": 79
+}

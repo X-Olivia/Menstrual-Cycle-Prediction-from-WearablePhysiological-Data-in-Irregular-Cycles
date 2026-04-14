@@ -41,6 +41,9 @@ personalization_stratified/outputs/
 new_workspace/record/experiment/multisignal_pipeline/prefix_full_*.log
 new_workspace/record/experiment/multisignal_pipeline/logs/
 
+# 论文目录内重复导出的 PDF 副本（保留 conference 主稿即可）
+new_workspace/paper/Menstrual_Cycle_Prediction_from_Wearable_Physiological_Data__The_Role_of_Personalisation_in_Irregular_Cycles/Menstrual Cycle Prediction from Wearable Physiological Data in Irregular Cycles.pdf
+
 # new_workspace 论文 LaTeX 编译产物（不上传）
 new_workspace/paper/**/*.aux
 new_workspace/paper/**/*.bbl
@@ -58,6 +61,9 @@ new_workspace/paper/**/*synctex(busy)
 main_workspace/processed_data/
 main_workspace/subdataset/2/
 main_workspace/subdataset/cycle_clean_2.csv
+
+# new_workspace 研究结果表（不上传，本地保留）
+new_workspace/record/research/results/**/*.csv
 
 # 开源/外部数据集（仅保留文档与代码）
 open_source/dataset/**/*.csv

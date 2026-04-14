@@ -6,23 +6,22 @@
     "user_cycle_subgroups_csv": "/Users/xujing/FYP/new_workspace/record/research/results/subgroup_tables/user_cycle_subgroups_v1.csv"
   },
   "config": {
-    "cycle_length_min_history": 1,
-    "ovulatory_rate_anov_max": 0.2,
-    "ovulatory_rate_consistent_min": 0.8,
-    "ovulatory_status_min_history": 2,
-    "subgroup_version": "v1",
+    "cycle_length_min_cycles": 1,
+    "subgroup_version": "v2_retrospective_user_labels",
     "typical_cycle_max": 35.0,
     "typical_cycle_min": 23.0,
     "variability_high_sd_min": 7.0,
     "variability_low_sd_max": 4.0,
-    "variability_min_history": 2
+    "variability_min_cycles": 2
   },
-  "n_cycle_length_assigned": 71,
+  "n_cold_start_cycles": 40,
+  "n_cycle_length_assigned": 111,
   "n_cycles": 111,
-  "n_ovulatory_status_assigned": 38,
+  "n_cycles_with_any_subgroup": 111,
   "n_rows": 111,
+  "n_stable_profile_assigned": 73,
   "n_users": 40,
-  "n_variability_assigned": 38,
+  "n_variability_assigned": 104,
   "quality_cycles": 42,
   "signal_cols": [
     "nightly_temperature",
@@ -38,5 +37,5 @@
     "noct_hr_min",
     "hrv_coverage"
   ],
-  "subgroup_version": "v1"
+  "subgroup_version": "v2_retrospective_user_labels"
 }

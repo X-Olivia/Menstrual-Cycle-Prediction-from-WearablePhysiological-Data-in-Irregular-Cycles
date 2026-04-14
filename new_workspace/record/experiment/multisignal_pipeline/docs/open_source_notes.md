@@ -5,10 +5,20 @@ This directory mixes the current benchmark path with several retained comparator
 Mainline benchmark path:
 - `run.py`
 - `benchmark_main.py`
+- `candidate_registry.py`
 - `detectors_ml.py`
 - `detectors_rule.py`
 - `core/localizer.py`
 - `menses.py`
+
+Separate ablation harness:
+- `run_ablation.py`
+- `experimental/ablation_phase.py`
+
+Pool semantics:
+- `fast` = curated subset of the benchmark registry
+- `full` = total benchmark pool
+- `slow` candidates are still part of `full`, but may be run separately
 
 Current default reporting uses:
 - day-by-day prefix evaluation

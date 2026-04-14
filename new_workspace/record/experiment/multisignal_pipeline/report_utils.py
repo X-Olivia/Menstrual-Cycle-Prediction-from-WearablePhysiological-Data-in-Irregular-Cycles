@@ -195,7 +195,7 @@ def _print_detected_cycle_tables(report_rows):
             )
 
 
-def _print_header(mode):
+def _print_header(mode, pool_summary=None):
     print(f"\n{SEP}")
     print("  Multi-Signal Prefix Benchmark Selector")
     print(f"{SEP}")
@@ -203,13 +203,5 @@ def _print_header(mode):
     print(f"  Cycle: {CYCLE_OV_CSV}")
     print(f"  Signals: {SIGNALS_DIR}")
     print(f"  Rule σ={PREFIX_BENCHMARK_RULE_SIGMA} | ML σ={PREFIX_BENCHMARK_ML_SIGMA}")
-    print(
-        "  Fast mode candidates: Calendar, Oracle-prefix, "
-        "Rule-TempOnly-ftt_prefix, Rule-HROnly-ftt_prefix, "
-        "PhaseCls-HROnly, PhaseCls-TempOnly, PhaseCls-Temp+HR+HRV, "
-        "PhaseCls-AllSignals, PhaseCls-Temp+HR[Bayesian], "
-        "PhaseCls-Temp+HR[BayesianPersonalized], "
-        "PhaseCls-ENS-Temp+HR[Champion-BayesianPersonalized], "
-        "PhaseCls-Temp+HR[RF-baseline], PhaseCls-ENS-Temp+HR[Champion], "
-        "PhaseCls-Temp+HR[EvidenceSticky], RuleState-Temp+HR"
-    )
+    if pool_summary:
+        print(f"  Candidate pool: {pool_summary}")

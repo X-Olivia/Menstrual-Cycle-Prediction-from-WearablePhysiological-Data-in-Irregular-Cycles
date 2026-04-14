@@ -1,0 +1,118 @@
+{
+  "analysis_version": "personalization_matrix_v1",
+  "artifacts": {
+    "matrix_detect_audit_json": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/personalization_matrix_detect_audit_v1.json",
+    "matrix_histphys_refine_profile_csv": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/personalization_matrix_histphys_refine_profile_v1.csv",
+    "matrix_manifest_json": "/Users/xujing/FYP/new_workspace/record/research/results/manifests/personalization_matrix_manifest_v1.json",
+    "matrix_results_csv": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/personalization_matrix_results_v1.csv",
+    "matrix_results_md": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/personalization_matrix_results_v1.md"
+  },
+  "countdown_prior_modes": [
+    "population",
+    "history_acl"
+  ],
+  "detect_variant": "HistPhysRefine_vs_Base",
+  "histphys_refine_profile_manifest": {
+    "config": {
+      "hr_baseline_window_pre": 7,
+      "hr_evidence_margin": 0.0,
+      "localizer_score_min": 1.5,
+      "max_prior_cycles": 3,
+      "prior_std_floor": 0.08,
+      "profile_version": "l3_v1",
+      "refine_radius_max": 3,
+      "refine_radius_min": 1,
+      "refine_weight_high": 0.65,
+      "refine_weight_low": 0.35,
+      "temp_evidence_floor": 0.05,
+      "temp_evidence_scale": 0.5,
+      "temp_shift_post_offset": 2,
+      "temp_shift_window_post": 5,
+      "temp_shift_window_pre": 5,
+      "trigger_bias_clip": 0.06,
+      "trigger_bias_scale": 0.5
+    },
+    "n_ready": 21,
+    "n_rows": 111,
+    "n_users_ready": 14,
+    "profile_version": "l3_v1"
+  },
+  "includes_overall_row": true,
+  "l3_allow_imputation": false,
+  "matrix_detect_audit": {
+    "audit_version": "matrix_detect_v1",
+    "by_countdown_prior": {
+      "history_acl": {
+        "mean_delta_pers_minus_base_over_cycles": 0.0042924755213252916,
+        "mean_post_trigger_mae_base": 2.6889699937776523,
+        "mean_post_trigger_mae_pers": 2.693262469298978,
+        "median_delta_pers_minus_base_over_cycles": 0.0,
+        "n_impute_days_total": 0,
+        "n_labeled_cycles": 79
+      },
+      "population": {
+        "mean_delta_pers_minus_base_over_cycles": 6.960072426936609e-05,
+        "mean_post_trigger_mae_base": 2.644228251280285,
+        "mean_post_trigger_mae_pers": 2.6442978520045552,
+        "median_delta_pers_minus_base_over_cycles": 0.0,
+        "n_impute_days_total": 0,
+        "n_labeled_cycles": 79
+      }
+    },
+    "detect_variant": "HistPhysRefine_vs_Base"
+  },
+  "methods": [
+    "RefCalendar[Matrix]",
+    "RefHistoryACL[Matrix]",
+    "BaseDet+PopCount[Matrix]",
+    "BaseDet+HistACLCount[Matrix]",
+    "PersDet+PopCount[Matrix]",
+    "PersDet+HistACLCount[Matrix]"
+  ],
+  "n_rows": 60,
+  "profile_version": "l3_v1",
+  "statistics": {
+    "bootstrap_ci_level": 0.95,
+    "bootstrap_n_resamples": 2000,
+    "metrics_with_ci": [
+      "ov_plus_3_triggered_mae",
+      "ov_plus_5_triggered_mae",
+      "ov_plus_10_triggered_mae",
+      "ov_plus_3_mae",
+      "ov_plus_5_mae",
+      "ov_plus_10_mae",
+      "post_ov_mae",
+      "post_trigger_mae",
+      "ov_first_mae",
+      "ov_final_mae"
+    ]
+  },
+  "subgroup_families": [
+    "cycle_length_level_group",
+    "cycle_variability_group",
+    "stable_length_profile"
+  ],
+  "subgroup_version": "v2_retrospective_user_labels",
+  "wearable_reference": {
+    "group_name": "Temp+HR",
+    "key": "champion",
+    "localizer_cache_tag": "nightly_temperature_rhr_noct_hr_min",
+    "localizer_sigs": [
+      "nightly_temperature",
+      "rhr",
+      "noct_hr_min"
+    ],
+    "lookback_localize": 10,
+    "method_name": "PhaseCls-ENS-Temp+HR[Champion]",
+    "phase_kwargs": {
+      "localizer_smooth_window_m": 3,
+      "model_type": "rf",
+      "name_suffix": "[Champion]",
+      "phase_ensemble_models": [
+        "rf",
+        "hgb"
+      ],
+      "stabilization_policy": "score_smooth"
+    }
+  }
+}

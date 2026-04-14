@@ -6,6 +6,7 @@ import math
 import time
 import numpy as np
 
+from candidate_registry import candidate_defs_for_pool
 from detectors_ml import (
     prefix_ml_detect_loso,
     prefix_phase_classify_loso,
@@ -117,6 +118,7 @@ def _ovulation_accuracy_summary(det_by_day, lh, label):
             "acc_1d": float(np.mean(ae <= 1)),
             "acc_2d": float(np.mean(ae <= 2)),
             "acc_3d": float(np.mean(ae <= 3)),
+            "_raw_abs_errs": [float(x) for x in ae.tolist()],
         }
         print(
             f"    [{label} {suffix}] n={res['n']}"
@@ -380,6 +382,8 @@ def _evaluate_bundle_silent(cs, lh, subj_order, labeled, quality_subset, spec, d
         "family": spec["family"],
         "signal_group": spec["signal_group"],
         "localizer_group": spec.get("localizer_group", spec["signal_group"]),
+        "candidate_kind": spec.get("candidate_kind"),
+        "runtime_class": spec.get("runtime_class"),
         "summary": summary,
         "quality_summary": quality_summary,
         "post_trigger_summary": post_trigger_summary,
@@ -564,179 +568,108 @@ def _rule_state_candidate(
     }
 
 
-def _fast_candidate_specs(bayesian_overrides=None):
-    """Fast benchmark pool.
+def _spec_from_registry_entry(entry, bayesian_overrides=None):
+    builder = entry["builder"]
+    if builder == "rule_single_ttest":
+        spec = {
+            "name": entry["name"],
+            "family": entry["family"],
+            "signal_group": entry["short_name"],
+            "use_stability_gate": True,
+            "fn": lambda cs, lh, sig_key=entry["sig_key"], invert=entry["invert"]: detect_ttest_prefix_daily(
+                cs,
+                sig_key,
+                sigma=PREFIX_BENCHMARK_RULE_SIGMA,
+                invert=invert,
+            ),
+        }
+    elif builder == "rule_single_cusum":
+        spec = {
+            "name": entry["name"],
+            "family": entry["family"],
+            "signal_group": entry["short_name"],
+            "use_stability_gate": True,
+            "fn": lambda cs, lh, sig_key=entry["sig_key"], invert=entry["invert"]: detect_cusum_prefix_daily(
+                cs,
+                sig_key,
+                sigma=PREFIX_BENCHMARK_RULE_SIGMA,
+                invert=invert,
+            ),
+        }
+    elif builder == "rule_fused_ttest":
+        rule_groups = _rule_group_lookup()
+        sigs, inverts = rule_groups[entry["group_name"]]
+        spec = _rule_candidate(entry["name"], entry["group_name"], sigs, inverts)
+    elif builder == "rule_fused_cusum":
+        rule_groups = _rule_group_lookup()
+        sigs, inverts = rule_groups[entry["group_name"]]
+        spec = {
+            "name": entry["name"],
+            "family": entry["family"],
+            "signal_group": entry["group_name"],
+            "use_stability_gate": True,
+            "fn": lambda cs, lh, sigs=sigs, inverts=inverts: detect_multi_cusum_fused_prefix_daily(
+                cs,
+                sigs,
+                sigma=PREFIX_BENCHMARK_RULE_SIGMA,
+                inverts=inverts,
+            ),
+        }
+    elif builder == "phase_candidate":
+        phase_kwargs = dict(entry.get("phase_kwargs", {}))
+        if entry.get("inject_bayesian_overrides"):
+            phase_kwargs["bayesian_prior_overrides"] = bayesian_overrides
+        spec = _phase_candidate(entry["group_name"], **phase_kwargs)
+    elif builder == "rule_state_candidate":
+        spec = _rule_state_candidate(
+            entry["group_name"],
+            localizer_sigs_override=entry.get("localizer_sigs_override"),
+            localizer_label_override=entry.get("localizer_label_override"),
+        )
+    elif builder == "ml_prefix":
+        sigs = _group_lookup()[entry["group_name"]]
+        spec = {
+            "name": entry["name"],
+            "family": entry["family"],
+            "signal_group": entry["group_name"],
+            "use_stability_gate": True,
+            "fn": lambda cs, lh, model_type=entry["model_type"], sigs=sigs: prefix_ml_detect_loso(
+                cs,
+                lh,
+                model_type=model_type,
+                sigs=sigs,
+                sigma=PREFIX_BENCHMARK_ML_SIGMA,
+            ),
+        }
+    else:
+        raise ValueError(f"Unknown candidate builder: {builder}")
 
-    This list intentionally mixes:
-    - mainline shipped comparators
-    - stronger non-personalized Bayesian variants
-    - personalized Bayesian comparators retained for explicit comparison
+    spec["candidate_kind"] = entry["kind"]
+    spec["runtime_class"] = entry["runtime_class"]
+    spec["in_fast"] = entry["in_fast"]
+    spec["in_full"] = entry["in_full"]
+    return spec
 
-    The personalized candidates are named explicitly with `BayesianPersonalized`
-    so their status is visible in logs and downstream reports.
-    """
-    rule_groups = _rule_group_lookup()
+
+def _candidate_specs(mode="fast", bayesian_overrides=None, include_slow=True, family=None):
+    entries = candidate_defs_for_pool(mode, include_slow=include_slow, family=family)
     return [
-        _rule_candidate(
-            "Rule-TempOnly-ftt_prefix",
-            "TempOnly",
-            rule_groups["TempOnly"][0],
-            rule_groups["TempOnly"][1],
-        ),
-        _rule_candidate(
-            "Rule-HROnly-ftt_prefix",
-            "HROnly",
-            rule_groups["HROnly"][0],
-            rule_groups["HROnly"][1],
-        ),
-        _phase_candidate("HROnly", model_type="rf"),
-        _phase_candidate("TempOnly", model_type="rf"),
-        _phase_candidate("Temp+HR+HRV", model_type="rf"),
-        _phase_candidate("AllSignals", model_type="rf"),
-        _phase_candidate(
-            "Temp+HR",
-            model_type="rf",
-            use_bayesian_localizer=True,
-            prior_weight=2.0,
-            name_suffix="[Bayesian]",
-        ),
-        _phase_candidate(
-            "Temp+HR",
-            model_type="rf",
-            use_bayesian_localizer=True,
-            prior_weight=2.0,
-            bayesian_prior_overrides=bayesian_overrides,
-            name_suffix="[BayesianPersonalized]",
-        ),
-        _phase_candidate(
-            "Temp+HR",
-            model_type="rf",
-            phase_ensemble_models=PHASECLS_PHASE_ENSEMBLE_MODELS,
-            use_bayesian_localizer=True,
-            prior_weight=2.0,
-            bayesian_prior_overrides=bayesian_overrides,
-            name_suffix="[Champion-BayesianPersonalized]",
-        ),
-        _phase_candidate("Temp+HR", model_type="rf", name_suffix="[RF-baseline]"),
-        _phase_candidate(
-            "Temp+HR",
-            model_type="rf",
-            phase_ensemble_models=PHASECLS_PHASE_ENSEMBLE_MODELS,
-            stabilization_policy="score_smooth",
-            localizer_smooth_window_m=int(PHASECLS_LOCALIZER_SCORE_SMOOTH_M),
-            name_suffix="[Champion]",
-        ),
-        _phase_candidate(
-            "Temp+HR",
-            model_type="rf",
-            trigger_mode="evidence",
-            stabilization_policy="sticky",
-            localizer_score_min=PHASECLS_LOCALIZER_SCORE_MIN,
-            localizer_shift_min=PHASECLS_LOCALIZER_SHIFT_MIN,
-            localizer_agreement_days=PHASECLS_LOCALIZER_AGREEMENT_DAYS,
-            localizer_agreement_tol=PHASECLS_LOCALIZER_AGREEMENT_TOL,
-            sticky_radius=PHASECLS_STICKY_RADIUS,
-            sticky_improve_margin=PHASECLS_STICKY_IMPROVE_MARGIN,
-            name_suffix="[EvidenceSticky]",
-        ),
-        _rule_state_candidate(
-            "Temp+HR",
-            localizer_sigs_override=PHASECLS_LOCALIZER_OVERRIDES["Temp+HR"],
-            localizer_label_override="+".join(PHASECLS_LOCALIZER_OVERRIDES["Temp+HR"]),
-        ),
+        _spec_from_registry_entry(entry, bayesian_overrides=bayesian_overrides)
+        for entry in entries
     ]
 
 
-def _full_candidate_specs(bayesian_overrides=None):
-    specs = []
-    for short_name, sig_key, invert in PREFIX_SINGLE_SIGNAL_SPECS:
-        specs.append(
-            {
-                "name": f"{short_name}-tt_prefix",
-                "family": "rule-single-tt",
-                "signal_group": short_name,
-                "use_stability_gate": True,
-                "fn": lambda cs, lh, sig_key=sig_key, invert=invert: detect_ttest_prefix_daily(
-                    cs,
-                    sig_key,
-                    sigma=PREFIX_BENCHMARK_RULE_SIGMA,
-                    invert=invert,
-                ),
-            }
-        )
-        specs.append(
-            {
-                "name": f"{short_name}-cusum_prefix",
-                "family": "rule-single-cusum",
-                "signal_group": short_name,
-                "use_stability_gate": True,
-                "fn": lambda cs, lh, sig_key=sig_key, invert=invert: detect_cusum_prefix_daily(
-                    cs,
-                    sig_key,
-                    sigma=PREFIX_BENCHMARK_RULE_SIGMA,
-                    invert=invert,
-                ),
-            }
-        )
-
-    for group_name, sigs, inverts in PREFIX_RULE_SIGNAL_GROUPS:
-        specs.append(
-            {
-                "name": f"{group_name}-ftt_prefix",
-                "family": "rule-fused-tt",
-                "signal_group": group_name,
-                "use_stability_gate": True,
-                "fn": lambda cs, lh, sigs=sigs, inverts=inverts: detect_multi_signal_fused_ttest_prefix_daily(
-                    cs,
-                    sigs,
-                    sigma=PREFIX_BENCHMARK_RULE_SIGMA,
-                    inverts=inverts,
-                ),
-            }
-        )
-        specs.append(
-            {
-                "name": f"{group_name}-cusum_prefix",
-                "family": "rule-fused-cusum",
-                "signal_group": group_name,
-                "use_stability_gate": True,
-                "fn": lambda cs, lh, sigs=sigs, inverts=inverts: detect_multi_cusum_fused_prefix_daily(
-                    cs,
-                    sigs,
-                    sigma=PREFIX_BENCHMARK_RULE_SIGMA,
-                    inverts=inverts,
-                ),
-            }
-        )
-
-    for model_type in PHASECLS_MODEL_TYPES:
-        for group_name, _sigs in PREFIX_ML_SIGNAL_GROUPS:
-            specs.append(_phase_candidate(group_name, model_type=model_type))
-
-    for model_type, model_label in PREFIX_ML_MODELS:
-        for group_name, sigs in PREFIX_ML_SIGNAL_GROUPS:
-            specs.append(
-                {
-                    "name": f"{model_label}-{group_name}",
-                    "family": f"ml-{model_type}",
-                    "signal_group": group_name,
-                    "use_stability_gate": True,
-                    "fn": lambda cs, lh, model_type=model_type, sigs=sigs: prefix_ml_detect_loso(
-                        cs,
-                        lh,
-                        model_type=model_type,
-                        sigs=sigs,
-                        sigma=PREFIX_BENCHMARK_ML_SIGMA,
-                    ),
-                }
-            )
-    return specs
+def _fast_candidate_specs(bayesian_overrides=None):
+    return _candidate_specs("fast", bayesian_overrides=bayesian_overrides)
 
 
-def _candidate_specs(mode="fast", bayesian_overrides=None):
-    if mode == "fast":
-        return _fast_candidate_specs(bayesian_overrides=bayesian_overrides)
-    return _full_candidate_specs(bayesian_overrides=bayesian_overrides)
+def _full_candidate_specs(bayesian_overrides=None, include_slow=True, family=None):
+    return _candidate_specs(
+        "full",
+        bayesian_overrides=bayesian_overrides,
+        include_slow=include_slow,
+        family=family,
+    )
 
 
 
@@ -1079,32 +1012,37 @@ def _get_bayesian_prior_overrides(cs, lh, subj_order):
         sys.path.append(str(research_code_path))
     
     try:
-        from personalization import build_zero_shot_calibration_table, L1Config
+        from personalization import build_zero_shot_personalization_profile_table, L1Config
     except ImportError:
         # Fallback to absolute FYP root based pathing
         fyp_root = Path(__file__).resolve().parents[4]
         alt_path = fyp_root / "new_workspace" / "record" / "research" / "code"
         if str(alt_path) not in sys.path:
             sys.path.append(str(alt_path))
-        from personalization import build_zero_shot_calibration_table, L1Config
+        from personalization import build_zero_shot_personalization_profile_table, L1Config
 
     cfg = L1Config()
-    cal_df = build_zero_shot_calibration_table(cs, lh, subj_order, cfg)
+    profile_df = build_zero_shot_personalization_profile_table(cs, lh, subj_order, cfg)
 
     overrides = {}
-    for row in cal_df.itertuples():
+    for row in profile_df.itertuples():
         # Map sgk to (mean_frac, std_frac)
-        # build_zero_shot_calibration_table puts these in the df
+        # build_zero_shot_personalization_profile_table puts these in the df
         if np.isfinite(row.ov_frac_prior_mean):
             overrides[row.small_group_key] = (row.ov_frac_prior_mean, row.ov_frac_prior_std)
     return overrides
 
 
-def run_prefix_benchmark(cs, lh, subj_order, labeled, quality_subset, mode="fast"):
+def run_prefix_benchmark(cs, lh, subj_order, labeled, quality_subset, mode="fast", include_slow=True, family=None):
     """Evaluate main candidate grid + Oracle/Calendar baselines (prints to stdout)."""
     overrides = _get_bayesian_prior_overrides(cs, lh, subj_order)
     candidate_rows = []
-    for spec in _candidate_specs(mode, bayesian_overrides=overrides):
+    for spec in _candidate_specs(
+        mode,
+        bayesian_overrides=overrides,
+        include_slow=include_slow,
+        family=family,
+    ):
 
         candidate_rows.append(
             _evaluate_candidate(cs, lh, subj_order, labeled, quality_subset, spec)

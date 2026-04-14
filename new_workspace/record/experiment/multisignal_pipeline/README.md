@@ -5,7 +5,11 @@ This folder is organized so that code, documentation, and run artifacts are sepa
 ## Code
 
 - `run.py`
-  - CLI entrypoint for the default benchmark.
+  - CLI entrypoint for benchmark execution only.
+- `run_ablation.py`
+  - CLI entrypoint for ablation and design-validation experiments.
+- `candidate_registry.py`
+  - unified benchmark candidate registry; `fast` and `full` are both sliced from here.
 - `benchmark_main.py`
   - candidate construction, evaluation orchestration, and benchmark selection.
 - `data.py`
@@ -28,7 +32,7 @@ This folder is organized so that code, documentation, and run artifacts are sepa
 - `core/`
   - localizer and stabilization utilities used by the main pipeline.
 - `experimental/`
-  - retained ablations and experimental comparators that are not the core shipped path.
+  - retained ablation implementations; executed through `run_ablation.py`, not `run.py`.
 
 ## Documentation
 
@@ -45,5 +49,9 @@ This folder is organized so that code, documentation, and run artifacts are sepa
 ## Notes
 
 - The default benchmark path is still `python run.py`.
+- `fast` is the curated subset of the total benchmark pool.
+- `full` is the total benchmark pool.
+- slow legacy ML candidates still belong to `full`, but can be run separately with `python run.py --slow-only`.
+- ablations are no longer mixed into the benchmark CLI; use `python run_ablation.py`.
 - Some helpers are retained for debugging or retrospective analysis even if they are
   not called by the default benchmark.

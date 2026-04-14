@@ -3,11 +3,16 @@
 这份文档只回答 4 个问题：
 
 1. 当前默认 benchmark 在跑什么
-2. 目前最好的组合是谁
+2. 当前 fast benchmark 里最好的组合是谁
 3. 各类方法分别表现如何
 4. 如何复现和更新这份结果
 
 数据来源：`logs/post_reorg_validation.log`
+
+说明：
+- 本文档中的 “最佳方法” 默认指 `fast benchmark winner`
+- 只有当 `full` 总池完整跑完后，才可以单独声明 `full benchmark winner`
+- `ablation` 结果不参与 `fast/full` 排名，需通过单独的 adoption decision 才能进入 benchmark pool
 
 ## Current Snapshot
 
@@ -18,7 +23,7 @@
 | Rule σ / ML σ | `2.0 / 1.5` |
 | 基线 | `Calendar`, `Oracle-prefix` |
 | 排名主指标 | `PostOvDays MAE` |
-| 当前最佳方法 | `PhaseCls-ENS-Temp+HR[Champion]` |
+| 当前 fast benchmark 最佳方法 | `PhaseCls-ENS-Temp+HR[Champion]` |
 | Calendar PostOvDays MAE | `3.19` |
 | Oracle PostOvDays MAE | `1.65` |
 | Best PostOvDays MAE | `2.80` |
@@ -29,7 +34,7 @@
 
 | 目标 | 当前最佳方法 | 结果 |
 |------|--------------|------|
-| 默认总排名最佳 | `PhaseCls-ENS-Temp+HR[Champion]` | `PostOvDays MAE = 2.80` |
+| 默认 fast benchmark 最佳 | `PhaseCls-ENS-Temp+HR[Champion]` | `PostOvDays MAE = 2.80` |
 | 非个性化 Phase 系列最佳 | `PhaseCls-ENS-Temp+HR[Champion]` | `AllDays = 3.95`, `PostOvDays = 2.80` |
 | Post-trigger 最佳 | `PhaseCls-Temp+HR[RF-baseline]` | `PostTrigger MAE = 2.74` |
 | Anchor-post 最佳 | `PhaseCls-Temp+HR[Bayesian]` | `AnchorPost = 3.02` |
@@ -38,7 +43,7 @@
 
 ### Practical Reading
 
-- 如果你只想看当前默认 benchmark 的冠军，直接看 `PhaseCls-ENS-Temp+HR[Champion]`。
+- 如果你只想看当前默认 fast benchmark 的冠军，直接看 `PhaseCls-ENS-Temp+HR[Champion]`。
 - 如果你想看“不用 personalization 的最好组合”，也是 `PhaseCls-ENS-Temp+HR[Champion]`。
 - 如果你想看“个性化 prior 是否真的赢了”，当前答案是否定的：个性化候选进入了前列，但没有超过当前 champion。
 
@@ -67,7 +72,7 @@
 
 | Rank | Method | Group | AllMAE | PostMAE | FirstDet | Ov1st MAE | Avail | Notes |
 |------|--------|-------|--------|---------|----------|-----------|-------|-------|
-| 1 | `PhaseCls-ENS-Temp+HR[Champion]` | Temp+HR | 3.95 | 2.80 | 23.71 | 3.68 | 28.5% | 当前总冠军 |
+| 1 | `PhaseCls-ENS-Temp+HR[Champion]` | Temp+HR | 3.95 | 2.80 | 23.71 | 3.68 | 28.5% | 当前 fast 冠军 |
 | 2 | `PhaseCls-Temp+HR[RF-baseline]` | Temp+HR | 3.95 | 2.82 | 23.88 | 3.62 | 27.7% | 当前主线对照 |
 | 3 | `PhaseCls-Temp+HR[Bayesian]` | Temp+HR | 3.97 | 2.85 | 23.88 | 3.45 | 27.7% | Anchor-post 最佳 |
 | 4 | `PhaseCls-HROnly` | HROnly | 3.99 | 2.90 | 23.89 | 3.85 | 27.7% | 纯 HR 监督基线 |

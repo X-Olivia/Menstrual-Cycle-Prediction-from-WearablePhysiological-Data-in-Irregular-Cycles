@@ -103,7 +103,9 @@ These metrics are necessary to determine whether any future personalization gain
 
 Irregularity should not be reduced to a single `regular vs irregular` label.
 
-The main analysis should use two primary axes defined from user history only.
+The main analysis should use two primary axes defined as retrospective
+user-level phenotype labels. These labels are used only for post hoc stratified
+analysis and are not provided to the model during training or inference.
 
 ### 6.1 Primary axis A: cycle-length level
 
@@ -115,7 +117,9 @@ Recommended categories:
 - typical-stable
 - long-stable
 
-These categories should be defined using each user’s historical mean cycle length only, without using the target cycle.
+These categories should be defined using each user's observed-cycle mean length
+as a retrospective phenotype summary and then assigned to all cycles from that
+user, including `cycle0`.
 
 ### 6.2 Primary axis B: cycle-to-cycle variability
 
@@ -127,19 +131,32 @@ Recommended categories:
 - medium variability
 - high variability
 
-These categories should be defined using history-based dispersion measures such as standard deviation or coefficient of variation.
+These categories should be defined using user-level dispersion measures such as
+standard deviation or coefficient of variation computed across observed cycles.
+Because this axis is retrospective and analysis-only, it may be assigned to
+earlier cycles from the same user after the user's longitudinal pattern is
+known.
+
+In the current implementation, the primary subgroup labels are still assigned
+using fixed `SD` thresholds for interpretability. User-level `CV` is retained
+and exported as a descriptive companion metric so that long-cycle users can be
+audited separately in sensitivity analysis without changing the main subgroup
+labels.
 
 ### 6.3 Secondary axis: ovulatory status
 
-Ovulatory status should be analysed, but it should **not** be one of the main grouping axes in the core results.
+Ovulatory status was considered as a possible secondary axis, but it is **not**
+used in the current implementation.
 
-Recommended categories:
+The original idea was to use categories such as:
 
 - consistently ovulatory
 - mixed ovulatory
 - frequently anovulatory
 
-However, this axis should be treated as a **secondary or sensitivity analysis**, because it is partly entangled with the same LH-based label system used for supervision and evaluation.
+However, this axis is too entangled with the same LH-based label system used for
+supervision and evaluation. In the current codebase it has therefore been
+removed rather than retained as a sensitivity analysis.
 
 ## 7. Personalization: Operational Definition
 
@@ -167,6 +184,9 @@ The paper should compare exactly four levels:
 #### L0 Population
 
 Cross-user detector with no user-specific adaptation beyond globally shared modeling.
+
+For a cold-start first cycle with no prior user history, this is also the
+operational fallback used by personalized levels.
 
 #### L1 Zero-shot history-calibrated
 
@@ -265,12 +285,16 @@ Evaluate gains separately across:
 
 This should be the core subgroup analysis.
 
+These subgroup labels are retrospective analysis labels. They are attached
+post hoc to all cycles from the same user, including `cycle0`, but they do not
+change prediction-time behavior.
+
 ### Stage 3: secondary analyses
 
 Only after Stage 2, and only if sample sizes are sufficient:
 
 - compact joint profile view
-- ovulatory-status analysis
+- any future secondary phenotype analysis based on stronger labels than LH-only proxies
 
 These analyses should be labelled exploratory or sensitivity analyses if subgroup sizes are small.
 
@@ -287,6 +311,9 @@ For each model level:
 - `PostTrigger MAE`
 - `PostTrigger ±2d / ±3d`
 - `AllDays MAE`
+
+This table should include all labelled cycles, including cold-start `cycle0`
+cases that may not have prior user history for personalization.
 
 ### Table B. Detector performance
 
@@ -332,7 +359,7 @@ The paper should explicitly acknowledge that ovulation truth is inferred rather 
 
 The next implementation steps should follow this order:
 
-1. construct history-only subgroup definitions for:
+1. construct retrospective user-level subgroup definitions for:
    - cycle-length level
    - cycle variability
 2. evaluate the current multisignal strict-prefix detector across those subgroup definitions

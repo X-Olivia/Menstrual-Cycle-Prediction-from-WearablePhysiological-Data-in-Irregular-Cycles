@@ -13,9 +13,6 @@ TYPICAL_CYCLE_MAX = 35.0
 VARIABILITY_LOW_SD_MAX = 4.0
 VARIABILITY_HIGH_SD_MIN = 7.0
 
-OVULATORY_RATE_CONSISTENT_MIN = 0.80
-OVULATORY_RATE_ANOV_MAX = 0.20
-
 
 @dataclass(frozen=True)
 class SubgroupConfig:
@@ -23,12 +20,9 @@ class SubgroupConfig:
     typical_cycle_max: float = TYPICAL_CYCLE_MAX
     variability_low_sd_max: float = VARIABILITY_LOW_SD_MAX
     variability_high_sd_min: float = VARIABILITY_HIGH_SD_MIN
-    ovulatory_rate_consistent_min: float = OVULATORY_RATE_CONSISTENT_MIN
-    ovulatory_rate_anov_max: float = OVULATORY_RATE_ANOV_MAX
-    cycle_length_min_history: int = 1
-    variability_min_history: int = 2
-    ovulatory_status_min_history: int = 2
-    subgroup_version: str = "v1"
+    cycle_length_min_cycles: int = 1
+    variability_min_cycles: int = 2
+    subgroup_version: str = "v2_retrospective_user_labels"
 
 
 def _safe_mean(vals: list[float]) -> float:
@@ -67,16 +61,6 @@ def compute_cycle_variability_group(hist_cycle_len_std: float, cfg: SubgroupConf
     return "medium-variability"
 
 
-def compute_ovulatory_status_group(hist_ovulatory_rate: float, cfg: SubgroupConfig) -> str | None:
-    if not np.isfinite(hist_ovulatory_rate):
-        return None
-    if hist_ovulatory_rate >= cfg.ovulatory_rate_consistent_min:
-        return "consistently-ovulatory"
-    if hist_ovulatory_rate <= cfg.ovulatory_rate_anov_max:
-        return "frequently-anovulatory"
-    return "mixed-ovulatory"
-
-
 def derive_stable_length_profile(
     cycle_length_level_group: str | None, cycle_variability_group: str | None
 ) -> str | None:
@@ -95,8 +79,29 @@ def build_user_history_table(
     rows: list[dict[str, Any]] = []
 
     for user_id, sgks in subj_order.items():
+        observed_cycle_lens = [
+            float(cycle_series[sgk]["cycle_len"])
+            for sgk in sgks
+            if sgk in cycle_series
+        ]
+        user_total_cycles = len(observed_cycle_lens)
+        user_cycle_len_mean = _safe_mean(observed_cycle_lens)
+        user_cycle_len_std = _safe_std(observed_cycle_lens)
+        user_cycle_len_cv = _safe_cv(user_cycle_len_mean, user_cycle_len_std)
+
+        cycle_length_level_group = None
+        if user_total_cycles >= cfg.cycle_length_min_cycles:
+            cycle_length_level_group = compute_cycle_length_level_group(user_cycle_len_mean, cfg)
+
+        cycle_variability_group = None
+        if user_total_cycles >= cfg.variability_min_cycles:
+            cycle_variability_group = compute_cycle_variability_group(user_cycle_len_std, cfg)
+
+        stable_length_profile = derive_stable_length_profile(
+            cycle_length_level_group,
+            cycle_variability_group,
+        )
         prior_cycle_lens: list[float] = []
-        prior_ovulatory_flags: list[int] = []
 
         for idx, sgk in enumerate(sgks):
             if sgk not in cycle_series:
@@ -105,19 +110,6 @@ def build_user_history_table(
             hist_cycle_len_mean = _safe_mean(prior_cycle_lens)
             hist_cycle_len_std = _safe_std(prior_cycle_lens)
             hist_cycle_len_cv = _safe_cv(hist_cycle_len_mean, hist_cycle_len_std)
-            hist_ovulatory_rate = _safe_mean(prior_ovulatory_flags)
-
-            cycle_length_level_group = None
-            if len(prior_cycle_lens) >= cfg.cycle_length_min_history:
-                cycle_length_level_group = compute_cycle_length_level_group(hist_cycle_len_mean, cfg)
-
-            cycle_variability_group = None
-            if len(prior_cycle_lens) >= cfg.variability_min_history:
-                cycle_variability_group = compute_cycle_variability_group(hist_cycle_len_std, cfg)
-
-            ovulatory_status_group = None
-            if len(prior_ovulatory_flags) >= cfg.ovulatory_status_min_history:
-                ovulatory_status_group = compute_ovulatory_status_group(hist_ovulatory_rate, cfg)
 
             rows.append(
                 {
@@ -125,31 +117,28 @@ def build_user_history_table(
                     "small_group_key": sgk,
                     "cycle_order_index": idx,
                     "target_cycle_len": float(cycle_series[sgk]["cycle_len"]),
+                    "user_total_cycles": user_total_cycles,
+                    "user_cycle_len_mean": user_cycle_len_mean,
+                    "user_cycle_len_std": user_cycle_len_std,
+                    "user_cycle_len_cv": user_cycle_len_cv,
                     "n_history_cycles": len(prior_cycle_lens),
-                    "n_history_ovulatory_observed": len(prior_ovulatory_flags),
                     "hist_cycle_len_mean": hist_cycle_len_mean,
                     "hist_cycle_len_std": hist_cycle_len_std,
                     "hist_cycle_len_cv": hist_cycle_len_cv,
-                    "hist_ovulatory_rate": hist_ovulatory_rate,
                     "cycle_length_level_group": cycle_length_level_group,
                     "cycle_variability_group": cycle_variability_group,
-                    "ovulatory_status_group": ovulatory_status_group,
-                    "stable_length_profile": derive_stable_length_profile(
-                        cycle_length_level_group, cycle_variability_group
-                    ),
-                    "history_insufficient_for_cycle_length": len(prior_cycle_lens)
-                    < cfg.cycle_length_min_history,
-                    "history_insufficient_for_variability": len(prior_cycle_lens)
-                    < cfg.variability_min_history,
-                    "history_insufficient_for_ovulatory_status": len(prior_ovulatory_flags)
-                    < cfg.ovulatory_status_min_history,
+                    "stable_length_profile": stable_length_profile,
+                    "subgroup_insufficient_for_cycle_length": user_total_cycles
+                    < cfg.cycle_length_min_cycles,
+                    "subgroup_insufficient_for_variability": user_total_cycles
+                    < cfg.variability_min_cycles,
+                    "is_cold_start_cycle": len(prior_cycle_lens) == 0,
                     "target_cycle_has_lh_ovulation_label": sgk in lh_ov_dict,
                     "subgroup_version": cfg.subgroup_version,
                 }
             )
 
             prior_cycle_lens.append(float(cycle_series[sgk]["cycle_len"]))
-            prior_ovulatory_flags.append(1 if sgk in lh_ov_dict else 0)
 
     return pd.DataFrame(rows).sort_values(["user_id", "cycle_order_index"]).reset_index(drop=True)
 
@@ -164,22 +153,46 @@ def build_subgroup_summary(
     subgroup_cols = [
         "cycle_length_level_group",
         "cycle_variability_group",
-        "ovulatory_status_group",
         "stable_length_profile",
     ]
     for subgroup_col in subgroup_cols:
         sub = user_cycle_df[user_cycle_df[subgroup_col].notna()].copy()
         if sub.empty:
             continue
-        grp = (
+        cycle_grp = (
             sub.groupby(subgroup_col)
             .agg(
                 n_rows=("small_group_key", "size"),
                 n_users=("user_id", "nunique"),
                 mean_history_cycles=("n_history_cycles", "mean"),
+                mean_total_cycles=("user_total_cycles", "mean"),
+                cold_start_cycle_rate=("is_cold_start_cycle", "mean"),
                 labeled_cycle_rate=("target_cycle_has_lh_ovulation_label", "mean"),
                 mean_target_cycle_len=("target_cycle_len", "mean"),
             )
+        )
+
+        user_grp = (
+            sub[
+                [
+                    "user_id",
+                    subgroup_col,
+                    "user_cycle_len_mean",
+                    "user_cycle_len_std",
+                    "user_cycle_len_cv",
+                ]
+            ]
+            .drop_duplicates(["user_id", subgroup_col])
+            .groupby(subgroup_col)
+            .agg(
+                mean_user_cycle_len_mean=("user_cycle_len_mean", "mean"),
+                mean_user_cycle_len_std=("user_cycle_len_std", "mean"),
+                mean_user_cycle_len_cv=("user_cycle_len_cv", "mean"),
+            )
+        )
+
+        grp = (
+            cycle_grp.join(user_grp, how="left")
             .reset_index()
             .rename(columns={subgroup_col: "subgroup_name"})
         )
@@ -206,5 +219,13 @@ def subgroup_manifest(
         "n_cycles": int(user_cycle_df["small_group_key"].nunique()) if not user_cycle_df.empty else 0,
         "n_cycle_length_assigned": int(user_cycle_df["cycle_length_level_group"].notna().sum()),
         "n_variability_assigned": int(user_cycle_df["cycle_variability_group"].notna().sum()),
-        "n_ovulatory_status_assigned": int(user_cycle_df["ovulatory_status_group"].notna().sum()),
+        "n_stable_profile_assigned": int(user_cycle_df["stable_length_profile"].notna().sum()),
+        "n_cold_start_cycles": int(user_cycle_df["is_cold_start_cycle"].sum()),
+        "n_cycles_with_any_subgroup": int(
+            (
+                user_cycle_df["cycle_length_level_group"].notna()
+                | user_cycle_df["cycle_variability_group"].notna()
+                | user_cycle_df["stable_length_profile"].notna()
+            ).sum()
+        ),
     }

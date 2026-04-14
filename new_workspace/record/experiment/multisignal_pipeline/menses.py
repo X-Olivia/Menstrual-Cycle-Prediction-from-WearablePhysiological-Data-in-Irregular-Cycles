@@ -103,6 +103,43 @@ def _predict_menses_logic_core(data, day_idx, ov_est_raw, conf, hist_fols, acl, 
     return max(final_pred, cycle_day + 1)
 
 
+def _predict_menses_static_baseline_day(acl):
+    """Static baseline: fixed cycle-length prior with no day-aware correction."""
+    return float(acl)
+
+
+def _countdown_started_flags(det_seq, use_stability_gate=False, stable_days_required=2, stable_tol_days=1):
+    """Return per-day boolean flags indicating whether countdown has started."""
+    flags = []
+    countdown_started = False
+    last_non_none_ov = None
+    consecutive_stable_non_none = 0
+    for ov_est_today in det_seq:
+        if ov_est_today is not None and last_non_none_ov is not None:
+            if abs(ov_est_today - last_non_none_ov) <= stable_tol_days:
+                consecutive_stable_non_none += 1
+            else:
+                consecutive_stable_non_none = 1
+        elif ov_est_today is not None:
+            consecutive_stable_non_none = 1
+        else:
+            consecutive_stable_non_none = 0
+
+        if ov_est_today is not None:
+            last_non_none_ov = ov_est_today
+
+        use_countdown = ov_est_today is not None
+        if use_stability_gate:
+            use_countdown = (
+                ov_est_today is not None
+                and consecutive_stable_non_none >= stable_days_required
+            )
+        if use_countdown:
+            countdown_started = True
+        flags.append(countdown_started)
+    return flags
+
+
 def predict_menses(
     cs,
     det,
@@ -222,6 +259,9 @@ def evaluate_prefix_current_day(
     label="",
     use_stability_gate=False,
     score_only_pred_remaining_le=None,
+    use_population_only_prior=False,
+    custom_cycle_priors=None,
+    baseline_mode="dynamic",
 ):
     """
     Day-by-day current-day evaluation for an ongoing cycle.
@@ -237,6 +277,11 @@ def evaluate_prefix_current_day(
     If score_only_pred_remaining_le is set (e.g. 5), only accumulate errors on days where
     the model's predicted remaining days (from pred_menses_day - d) is at most that value.
     Prefix-valid: uses only ov_est_today / acl visible by day d.
+
+    Countdown priors: when ``use_population_only_prior`` is True, luteal length and the
+    no-detection fallback cycle length are forced to population defaults; if
+    ``custom_cycle_priors`` also supplies ``sgk``, its value overrides only ``acl`` so
+    population-luteal + per-cycle ACL (e.g. history ACL) can be combined.
     """
     pop_luteal_len = fl
     s_plut, s_pclen, s_pfol = defaultdict(list), defaultdict(list), defaultdict(list)
@@ -250,6 +295,9 @@ def evaluate_prefix_current_day(
     first_detection_days = []
     first_detection_ov_errs = []
     countdown_start_days = []
+
+    if baseline_mode not in {"dynamic", "static"}:
+        raise ValueError(f"Unknown baseline_mode: {baseline_mode}")
 
     if use_stability_gate:
         print(
@@ -274,6 +322,13 @@ def evaluate_prefix_current_day(
                 if pc
                 else DEFAULT_HISTORY_CYCLE_LEN
             )
+
+            if use_population_only_prior:
+                lut = pop_luteal_len
+                acl = DEFAULT_HISTORY_CYCLE_LEN
+            if custom_cycle_priors and sgk in custom_cycle_priors:
+                acl = custom_cycle_priors[sgk]
+
             ov_true = lh.get(sgk)
             det_seq = det_by_day.get(sgk, [None] * actual)
 
@@ -320,16 +375,19 @@ def evaluate_prefix_current_day(
                         else 0.5
                     )
 
-                    pred_menses_day = _predict_menses_logic_core(
-                        cs[sgk],
-                        day_idx,
-                        ov_est_today,
-                        conf_today,
-                        s_pfol[uid],
-                        acl,
-                        lut,
-                        use_countdown,
-                    )
+                    if baseline_mode == "static" and not use_countdown:
+                        pred_menses_day = _predict_menses_static_baseline_day(acl)
+                    else:
+                        pred_menses_day = _predict_menses_logic_core(
+                            cs[sgk],
+                            day_idx,
+                            ov_est_today,
+                            conf_today,
+                            s_pfol[uid],
+                            acl,
+                            lut,
+                            use_countdown,
+                        )
                     
                     if use_countdown and not countdown_started:
                         countdown_started = True
@@ -343,11 +401,6 @@ def evaluate_prefix_current_day(
                     ):
                         continue
                     err = pred_remaining - true_remaining
-
-                    # Filter out noisy early-luteal transition days (ov+2, 3, 4)
-                    k = cycle_day - ov_true
-                    if k in [2, 3, 4]:
-                        continue
 
                     errs_all.append(err)
                     scored_days += 1
@@ -387,6 +440,11 @@ def evaluate_prefix_current_day(
             f" mean_day={np.mean(countdown_start_days):.2f}"
         )
         summary["countdown_start_day_mean"] = float(np.mean(countdown_start_days))
+    summary["_raw_abs_errs"] = {
+        "all_days": [float(abs(err)) for err in errs_all],
+        "pre_ov_days": [float(abs(err)) for err in errs_pre_ov],
+        "post_ov_days": [float(abs(err)) for err in errs_post_ov],
+    }
 
     return summary
 
@@ -401,6 +459,9 @@ def evaluate_prefix_post_trigger(
     eval_subset=None,
     label="",
     use_stability_gate=False,
+    use_population_only_prior=False,
+    custom_cycle_priors=None,
+    baseline_mode="dynamic",
 ):
     """
     Auxiliary summary on days at or after the first countdown start.
@@ -417,6 +478,9 @@ def evaluate_prefix_post_trigger(
 
     errs_post_trigger = []
     countdown_start_days = []
+
+    if baseline_mode not in {"dynamic", "static"}:
+        raise ValueError(f"Unknown baseline_mode: {baseline_mode}")
 
     if use_stability_gate:
         print(
@@ -444,6 +508,13 @@ def evaluate_prefix_post_trigger(
                 if pc
                 else DEFAULT_HISTORY_CYCLE_LEN
             )
+
+            if use_population_only_prior:
+                lut = pop_luteal_len
+                acl = DEFAULT_HISTORY_CYCLE_LEN
+            if custom_cycle_priors and sgk in custom_cycle_priors:
+                acl = custom_cycle_priors[sgk]
+
             det_seq = det_by_day.get(sgk, [None] * actual)
             score_this = ev is None or sgk in ev
 
@@ -488,27 +559,22 @@ def evaluate_prefix_post_trigger(
                     if not countdown_started:
                         continue
 
-                    pred_menses_day = _predict_menses_logic_core(
-                        cs[sgk],
-                        day_idx,
-                        ov_est_today,
-                        conf_today,
-                        s_pfol[uid],
-                        acl,
-                        lut,
-                        use_countdown,
-                    )
+                    if baseline_mode == "static" and not use_countdown:
+                        pred_menses_day = _predict_menses_static_baseline_day(acl)
+                    else:
+                        pred_menses_day = _predict_menses_logic_core(
+                            cs[sgk],
+                            day_idx,
+                            ov_est_today,
+                            conf_today,
+                            s_pfol[uid],
+                            acl,
+                            lut,
+                            use_countdown,
+                        )
                     pred_remaining = pred_menses_day - cycle_day
                     true_remaining = actual - cycle_day
                     
-                    # Filter out noisy early-luteal transition days (ov+2, 3, 4)
-                    # We need the true ovulation day for this filter
-                    ov_true = lh.get(sgk)
-                    if ov_true is not None:
-                        k = cycle_day - ov_true
-                        if k in [2, 3, 4]:
-                            continue
-
                     errs_post_trigger.append(pred_remaining - true_remaining)
 
             s_pclen[uid].append(actual)
@@ -545,6 +611,7 @@ def evaluate_prefix_post_trigger(
             f"    [{label} PostTriggerCountdownStart] n={len(countdown_start_days)}"
             f" mean_day={summary['countdown_start_day_mean']:.2f}"
         )
+    summary["_raw_abs_errs"] = [float(x) for x in ae.tolist()]
     return summary
 
 
@@ -561,6 +628,14 @@ def predict_menses_by_anchors(
     fl=DEFAULT_POPULATION_LUTEAL_LENGTH,
     eval_subset=None,
     label="",
+    use_population_only_prior=False,
+    custom_cycle_priors=None,
+    baseline_mode="dynamic",
+    anchor_mode="all",
+    det_by_day=None,
+    confs_by_day=None,
+    anchor_days=None,
+    use_stability_gate=False,
 ):
     """
     Evaluate next-menses prediction at specific anchor days relative to LH ovulation.
@@ -572,9 +647,18 @@ def predict_menses_by_anchors(
     """
     pop_luteal_len = fl
     s_plut, s_pclen, s_pfol = defaultdict(list), defaultdict(list), defaultdict(list)
-    errs_by_k = {k: [] for k in ANCHORS_ALL}
+    eval_anchor_days = ANCHORS_ALL if anchor_days is None else list(anchor_days)
+    errs_by_k = {k: [] for k in eval_anchor_days}
     ev = set(eval_subset) if eval_subset else None
 
+    if baseline_mode not in {"dynamic", "static"}:
+        raise ValueError(f"Unknown baseline_mode: {baseline_mode}")
+
+    if anchor_mode not in {"all", "triggered"}:
+        raise ValueError(f"Unknown anchor_mode: {anchor_mode}")
+
+    eval_pre = [k for k in eval_anchor_days if k < 0]
+    eval_post = [k for k in eval_anchor_days if k > 0]
     for uid, sgks in subj_order.items():
         if isinstance(sgks, (int, str)): sgks = [sgks]
         for sgk in sgks:
@@ -596,8 +680,25 @@ def predict_menses_by_anchors(
                 else DEFAULT_HISTORY_CYCLE_LEN
             )
 
+            if use_population_only_prior:
+                lut = pop_luteal_len
+                acl = DEFAULT_HISTORY_CYCLE_LEN
+            if custom_cycle_priors and sgk in custom_cycle_priors:
+                acl = custom_cycle_priors[sgk]
+
             ov_true = lh.get(sgk)
             ov_est = det.get(sgk) if det else None
+            det_seq = None
+            conf_seq = None
+            countdown_started_flags = None
+            if det_by_day:
+                det_seq = det_by_day.get(sgk, [None] * actual)
+                countdown_started_flags = _countdown_started_flags(
+                    det_seq,
+                    use_stability_gate=use_stability_gate,
+                )
+            if confs_by_day:
+                conf_seq = confs_by_day.get(sgk, [0.5] * actual)
 
             # We need ov_true to place anchors. If missing, skip scoring.
             if ov_true is None:
@@ -609,28 +710,43 @@ def predict_menses_by_anchors(
                         s_plut[uid].append(el)
                 continue
 
-            for k in ANCHORS_ALL:
+            for k in eval_anchor_days:
                 anchor_day = ov_true + k
                 if not (0 <= anchor_day < actual):
                     continue
 
+                if anchor_mode == "triggered":
+                    if countdown_started_flags is None:
+                        continue
+                    if anchor_day >= len(countdown_started_flags) or not countdown_started_flags[int(anchor_day)]:
+                        continue
+
+                ov_est_for_anchor = ov_est
+                if det_seq is not None and anchor_day < len(det_seq):
+                    ov_est_for_anchor = det_seq[int(anchor_day)]
+
                 use_countdown = (
-                    ov_est is not None
-                    and ov_est > COUNTDOWN_MIN_OVULATION_DAY
-                    and anchor_day >= ov_est + COUNTDOWN_POST_OVULATION_OFFSET
+                    ov_est_for_anchor is not None
+                    and ov_est_for_anchor > COUNTDOWN_MIN_OVULATION_DAY
+                    and anchor_day >= ov_est_for_anchor + COUNTDOWN_POST_OVULATION_OFFSET
                 )
-                
+
                 conf_val = confs.get(sgk, 0.5) if confs else 0.5
-                menses_start_pred = _predict_menses_logic_core(
-                    cs[sgk],
-                    int(anchor_day), # day_idx
-                    ov_est,
-                    conf_val,
-                    s_pfol[uid],
-                    acl,
-                    lut,
-                    use_countdown,
-                )
+                if conf_seq is not None and anchor_day < len(conf_seq):
+                    conf_val = conf_seq[int(anchor_day)]
+                if baseline_mode == "static" and not use_countdown:
+                    menses_start_pred = _predict_menses_static_baseline_day(acl)
+                else:
+                    menses_start_pred = _predict_menses_logic_core(
+                        cs[sgk],
+                        int(anchor_day), # day_idx
+                        ov_est_for_anchor,
+                        conf_val,
+                        s_pfol[uid],
+                        acl,
+                        lut,
+                        use_countdown,
+                    )
 
                 if score_this:
                     pred_remaining = menses_start_pred - anchor_day
@@ -649,18 +765,24 @@ def predict_menses_by_anchors(
     # Print anchor breakdown and return a structured summary.
     ae_pre_all, ae_post_all = [], []
     summary = {"each_anchor": {}, "pre_all": {}, "post_all": {}}
-    for k in ANCHORS_PRE:
+    for k in eval_pre:
         ae = [abs(e) for e in errs_by_k[k]]
         if len(ae) > 0:
             ae_pre_all.extend(ae)
-        summary["each_anchor"][k] = _pr(f"{label} ov{k}", ae, prefix="    ")
-    for k in ANCHORS_POST:
+        anchor_summary = _pr(f"{label} ov{k}", ae, prefix="    ")
+        anchor_summary["_raw_abs_errs"] = [float(x) for x in ae]
+        summary["each_anchor"][k] = anchor_summary
+    for k in eval_post:
         ae = [abs(e) for e in errs_by_k[k]]
         if len(ae) > 0:
             ae_post_all.extend(ae)
-        summary["each_anchor"][k] = _pr(f"{label} ov+{k}", ae, prefix="    ")
+        anchor_summary = _pr(f"{label} ov+{k}", ae, prefix="    ")
+        anchor_summary["_raw_abs_errs"] = [float(x) for x in ae]
+        summary["each_anchor"][k] = anchor_summary
 
     # Aggregates
     summary["pre_all"] = _pr(f"{label} Pre_all", ae_pre_all, prefix="    ")
+    summary["pre_all"]["_raw_abs_errs"] = [float(x) for x in ae_pre_all]
     summary["post_all"] = _pr(f"{label} Post_all", ae_post_all, prefix="    ")
+    summary["post_all"]["_raw_abs_errs"] = [float(x) for x in ae_post_all]
     return summary

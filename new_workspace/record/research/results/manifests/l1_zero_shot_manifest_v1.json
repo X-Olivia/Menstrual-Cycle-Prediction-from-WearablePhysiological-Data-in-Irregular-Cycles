@@ -1,34 +1,77 @@
 {
   "analysis_version": "l1_zero_shot_v1",
   "artifacts": {
-    "l1_calibration_csv": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/l1_zero_shot_calibration_v1.csv",
+    "l1_active_effect_audit_json": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/l1_active_effect_audit_v1.json",
+    "l1_active_effect_cycles_csv": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/l1_active_effect_cycles_v1.csv",
     "l1_manifest_json": "/Users/xujing/FYP/new_workspace/record/research/results/manifests/l1_zero_shot_manifest_v1.json",
+    "l1_profile_csv": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/l1_zero_shot_profile_v1.csv",
     "l1_results_csv": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/l1_zero_shot_results_v1.csv",
     "l1_results_md": "/Users/xujing/FYP/new_workspace/record/research/results/personalization/l1_zero_shot_results_v1.md"
   },
-  "calibration_version": "l1_v1",
+  "includes_overall_row": true,
   "l1_manifest": {
-    "calibration_version": "l1_v1",
     "config": {
-      "calibration_version": "l1_v1",
       "prior_min_cycles": 1,
       "prior_std_floor": 0.08,
+      "profile_version": "l1_v1",
       "trigger_bias_clip": 0.06,
       "trigger_bias_scale": 0.5
     },
     "n_ready": 55,
     "n_rows": 111,
-    "n_users_ready": 29
+    "n_users_ready": 29,
+    "profile_version": "l1_v1"
   },
   "methods": [
     "Calendar",
-    "PhaseCls-Temp+HR[RF-baseline]",
-    "PhaseCls-Temp+HR[L1-zero-shot]"
+    "HistoryPrior-Menses",
+    "PhaseCls-ENS-Temp+HR[Champion]",
+    "PhaseCls-ENS-Temp+HR[Champion-L1-zero-shot]"
   ],
-  "n_rows": 18,
+  "n_rows": 40,
+  "profile_version": "l1_v1",
+  "statistics": {
+    "bootstrap_ci_level": 0.95,
+    "bootstrap_n_resamples": 2000,
+    "metrics_with_ci": [
+      "ov_plus_3_triggered_mae",
+      "ov_plus_5_triggered_mae",
+      "ov_plus_10_triggered_mae",
+      "ov_plus_3_mae",
+      "ov_plus_5_mae",
+      "ov_plus_10_mae",
+      "post_ov_mae",
+      "post_trigger_mae",
+      "ov_first_mae",
+      "ov_final_mae"
+    ]
+  },
   "subgroup_families": [
     "cycle_length_level_group",
-    "cycle_variability_group"
+    "cycle_variability_group",
+    "stable_length_profile"
   ],
-  "subgroup_version": "v1"
+  "subgroup_version": "v2_retrospective_user_labels",
+  "wearable_reference": {
+    "group_name": "Temp+HR",
+    "key": "champion",
+    "localizer_cache_tag": "nightly_temperature_rhr_noct_hr_min",
+    "localizer_sigs": [
+      "nightly_temperature",
+      "rhr",
+      "noct_hr_min"
+    ],
+    "lookback_localize": 10,
+    "method_name": "PhaseCls-ENS-Temp+HR[Champion]",
+    "phase_kwargs": {
+      "localizer_smooth_window_m": 3,
+      "model_type": "rf",
+      "name_suffix": "[Champion]",
+      "phase_ensemble_models": [
+        "rf",
+        "hgb"
+      ],
+      "stabilization_policy": "score_smooth"
+    }
+  }
 }

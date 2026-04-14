@@ -54,9 +54,8 @@ new_workspace/record/experiment/multisignal_pipeline/
   research/
     subgrouping.py
     personalization.py
-    experiment_specs.py
     experiment_runner.py
-    analysis_tables.py
+    report_builder.py
     exports.py
     paths.py
 ```
@@ -72,27 +71,30 @@ This should remain distinct from the current detector implementation modules so 
 
 ### Responsibility
 
-Construct history-only subgroup labels.
+Construct retrospective user-level subgroup labels for post hoc analysis while
+preserving per-cycle historical summary fields for cold-start-aware baselines.
 
 ### Inputs
 
 - cycle table
 - user id
-- historical cycle history only
+- observed cycle summaries for retrospective subgroup assignment
+- per-cycle historical summaries for baseline priors
 
 ### Core outputs
 
-- per-user subgroup assignment
+- per-user retrospective subgroup assignment
 - subgroup-defining statistics
 - subgroup eligibility flags
+- per-cycle historical summary fields used by history-based baselines
+- descriptive user-level variability statistics including both `SD` and `CV`
 
 ### Recommended functions
 
 - `build_user_history_table(...)`
 - `compute_cycle_length_level_group(...)`
 - `compute_cycle_variability_group(...)`
-- `compute_ovulatory_status_group(...)`
-- `build_user_subgroup_table(...)`
+- `build_subgroup_summary(...)`
 
 ### Required output columns
 
@@ -101,12 +103,28 @@ Construct history-only subgroup labels.
 - `hist_cycle_len_mean`
 - `hist_cycle_len_std`
 - `hist_cycle_len_cv`
-- `cycle_length_group`
+- `user_cycle_len_std`
+- `user_cycle_len_cv`
+- `cycle_length_level_group`
 - `cycle_variability_group`
-- `ovulatory_status_group`
 - `subgroup_version`
 
-This module must not inspect target-cycle future information.
+This module has two timing rules:
+
+- retrospective subgroup labels may use observed user-level cycle summaries across the user's available cycles
+- per-cycle historical summary fields used by baselines and personalization must remain forward-only and must not inspect target-cycle future information
+
+Implementation note:
+
+For the current main subgroup labels, cycle-variability groups are still
+assigned from fixed `SD` thresholds. `CV` is exported alongside `SD` in the
+subgroup artifacts for descriptive reporting and possible sensitivity analyses,
+but it does not currently change the subgroup label itself.
+
+The earlier `ovulatory_status_group` sketch has been removed from the active
+research code because it relied on LH-label presence as a proxy phenotype. That
+proxy is too tightly coupled to the same supervision and evaluation labels used
+elsewhere in the study.
 
 ## 4.2 `research/personalization.py`
 
@@ -116,22 +134,23 @@ Implement the `L0-L3` detector-personalization regimes.
 
 ### Design principle
 
-This module should not redefine the detector. It should provide calibration parameters and adapters that the detector can consume.
+This module should not redefine the detector. It should provide personalization profile parameters and adapters that the detector can consume.
 
 ### Recommended abstractions
 
-- `DetectorCalibrationProfile`
-- `UserHistoryCalibration`
-- `PersonalizationLevel`
+- `L1Config`, `L2Config`, `L3Config`
+- `PersonalizationProfileTable`
 
 ### Recommended functions
 
-- `build_zero_shot_calibration(...)`
-- `build_one_shot_calibration(...)`
-- `build_few_shot_calibration(...)`
-- `apply_detector_calibration(...)`
+- `build_zero_shot_personalization_profile_table(...)`
+- `build_one_shot_personalization_profile_table(...)`
+- `build_few_shot_personalization_profile_table(...)`
+- `apply_l1_zero_shot_personalization(...)`
+- `apply_l2_one_shot_personalization(...)`
+- `apply_l3_few_shot_personalization(...)`
 
-### Example calibration fields
+### Example profile fields
 
 - `temp_shift_scale`
 - `hr_baseline`
@@ -140,90 +159,76 @@ This module should not redefine the detector. It should provide calibration para
 - `trigger_bias`
 - `localizer_refine_radius`
 
-This module should explicitly map:
+This module explicitly maps:
 
-- `L0` -> no user calibration
+- `L0` -> no user-specific profile
 - `L1` -> history priors only
-- `L2` -> one prior cycle calibration
-- `L3` -> few-shot calibration
+- `L2` -> one prior cycle profile
+- `L3` -> few-shot profile
 
-## 4.3 `research/experiment_specs.py`
-
-### Responsibility
-
-Declare experiments as structured configs rather than ad hoc code branches.
-
-### Recommended contents
-
-- baseline experiments
-- subgroup experiments
-- personalization experiments
-- sensitivity experiments
-
-### Recommended functions
-
-- `overall_baseline_specs()`
-- `subgroup_baseline_specs()`
-- `personalization_specs()`
-- `secondary_sensitivity_specs()`
-
-### Design rule
-
-Experiment specification should be declarative. The runner should consume specs, not embed experimental logic inline.
-
-## 4.4 `research/experiment_runner.py`
+## 4.3 `research/experiment_runner.py`
 
 ### Responsibility
 
-Run experiments under a common interface and collect standardized outputs.
+Declare and execute experiments, and collect standardized outputs. 
+
+Note: This module replaces the earlier planned `experiment_specs.py` by embedding
+experiment methods and configurations directly as functions and internal
+definitions.
 
 ### Recommended workflow
 
 1. load data
 2. build subgroup table
 3. build personalization metadata
-4. run selected experiment specs
+4. execute specific analysis modes (baseline, L1, L2, L3)
 5. save per-cycle outputs
 6. aggregate tables
 
-### Recommended functions
+### Main analysis modes
 
-- `run_overall_baseline_experiments(...)`
-- `run_subgroup_baseline_experiments(...)`
-- `run_personalization_experiments(...)`
-- `run_secondary_ovulatory_status_analysis(...)`
+- `run_subgroup_baseline_analysis(...)`
+- `run_l1_zero_shot_analysis(...)`
+- `run_l2_one_shot_analysis(...)`
+- `run_l3_few_shot_analysis(...)`
 
 ### Required output granularity
 
 The runner should save:
 
-- per-cycle outputs
-- per-user outputs
-- subgroup aggregates
-- overall aggregates
+- per-cycle results (MAE, accuracy)
+- subgroup-wise aggregates
+- personalization profile tables
 
 This is necessary because subgroup questions cannot be answered from top-line averages alone.
 
-## 4.5 `research/analysis_tables.py`
+## 4.4 `research/report_builder.py`
 
 ### Responsibility
 
-Produce the paper-facing tables in a stable format.
+Produce the paper-facing tables and Markdown reports.
+
+Note: This module replaces the earlier planned `analysis_tables.py`. It
+aggregates results from multiple experiment runs to generate cross-regime
+comparisons.
 
 ### Recommended functions
 
-- `make_overall_table(...)`
-- `make_detector_table(...)`
-- `make_cycle_length_group_table(...)`
-- `make_variability_group_table(...)`
-- `make_ovulatory_status_table(...)`
-- `make_gain_table(...)`
+- `build_report()`
+- `_load_results(...)`
+- `_method_short_name(...)`
+
+### Reporting tasks
+
+- Produce `Wearable Gain Table` (Calendar vs History vs L0)
+- Produce `Personalization Table` (L0 vs L1 vs L2 vs L3)
+- Produce `Diagnostic Ablation Table` (L2 vs L2a vs L2b)
 
 ### Design rule
 
-This module should accept normalized result tables and should not rerun detectors.
+This module should accept normalized CSV result files and should not rerun detectors.
 
-## 4.6 `research/exports.py`
+## 4.5 `research/exports.py`
 
 ### Responsibility
 
@@ -287,12 +292,12 @@ The new research modules should wrap these rather than rewrite them.
 
 The key architectural rule is:
 
-**personalization must be injected as calibration, not as a separate detector rewrite for each level.**
+**personalization must be injected as a profile object, not as a separate detector rewrite for each level.**
 
 That means the detector should accept an optional personalization object such as:
 
 ```python
-calibration = {
+profile = {
     "temp_shift_scale": ...,
     "hr_baseline": ...,
     "ov_frac_prior_mean": ...,
@@ -305,8 +310,8 @@ Then:
 
 - `L0` passes `None`
 - `L1` passes history-derived priors
-- `L2` passes one-shot calibrated values
-- `L3` passes few-shot calibrated values
+- `L2` passes one-shot profile values
+- `L3` passes few-shot profile values
 
 This architecture keeps the scientific comparison clean:
 
@@ -401,7 +406,6 @@ Recommended commands:
 - `python -m research.experiment_runner --mode personalize-l1`
 - `python -m research.experiment_runner --mode personalize-l2`
 - `python -m research.experiment_runner --mode personalize-l3`
-- `python -m research.experiment_runner --mode ovulatory-sensitivity`
 
 Each command should save outputs into the research results directory.
 
@@ -451,11 +455,12 @@ Goal:
 
 ### Step 6
 
-Add secondary ovulatory-status analysis
+Do not add an ovulatory-status subgroup analysis unless the project obtains a
+stronger phenotype label than LH-only proxy membership.
 
 Goal:
 
-- produce sensitivity tables
+- avoid coupling subgroup definition to the same label system used for evaluation
 
 ## 11. Boundaries: What This Architecture Should Avoid
 

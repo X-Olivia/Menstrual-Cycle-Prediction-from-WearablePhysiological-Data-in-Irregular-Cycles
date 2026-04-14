@@ -23,9 +23,12 @@ All user-level generalization claims must use strict subject-wise splits.
 
 At cycle day `d`, only observations available up to day `d` may be used.
 
-### 2.3 No subgroup leakage
+### 2.3 Subgroup analysis labels must not affect inference
 
-All subgroup definitions must be constructed from user history only and must not use target-cycle future information.
+The current subgroup labels may be defined retrospectively from each user's
+observed cycles as a whole, but they are analysis-only labels. They must not be
+used as model inputs, routing variables, training targets, or online decision
+rules.
 
 ### 2.4 Quality subgroup use
 
@@ -60,9 +63,10 @@ Primary subgroup axes:
 - `A1 cycle-length level`
 - `A2 cycle variability`
 
-Secondary subgroup axis:
+Removed subgroup axis:
 
-- `A3 ovulatory status`
+- `A3 ovulatory status` was dropped from the current implementation because an
+  LH-label proxy is not sufficient to define a reliable ovulatory-status phenotype.
 
 ## 4. Subgroup Definition Strategy
 
@@ -74,7 +78,7 @@ These are the subgroups that must be implemented first.
 
 #### A1. Cycle-length level
 
-User-level grouping based on historical mean cycle length:
+User-level grouping based on retrospective mean cycle length:
 
 - `short-stable`
 - `typical-stable`
@@ -82,13 +86,13 @@ User-level grouping based on historical mean cycle length:
 
 Recommended implementation:
 
-- use the user’s pre-target historical mean cycle length
+- use the user's observed-cycle mean length as a retrospective phenotype summary
 - use fixed interpretable thresholds
-- require minimum history count before assigning a subgroup
+- assign the resulting user-level label to all cycles from that user, including `cycle0`
 
 #### A2. Cycle variability
 
-User-level grouping based on historical cycle-length variation:
+User-level grouping based on retrospective cycle-length variation:
 
 - `low-variability`
 - `medium-variability`
@@ -96,10 +100,11 @@ User-level grouping based on historical cycle-length variation:
 
 Recommended implementation:
 
-- use user-level historical cycle-length standard deviation and coefficient of variation
-- require minimum history count before assigning a subgroup
+- use user-level cycle-length standard deviation and coefficient of variation across observed cycles
+- require at least two observed cycles before assigning a variability subgroup
+- keep the current main labels on fixed `SD` thresholds, while exporting user-level `CV` for descriptive reporting and sensitivity checks
 
-### 4.2 Phase 2 subgroup set: secondary
+### 4.2 Phase 2 subgroup set: removed from current implementation
 
 #### A3. Ovulatory status
 
@@ -109,7 +114,9 @@ User-level grouping:
 - `mixed ovulatory`
 - `frequently anovulatory`
 
-This should be implemented only after the core subgroup analyses are stable, and it must be reported as a secondary or sensitivity analysis.
+This axis is no longer implemented in the current codebase. The proxy depended
+on LH-label presence and was removed because it does not provide a sufficiently
+clean separation between subgroup definition and evaluation labels.
 
 ### 4.3 Phase 3 subgroup set: compact joint profiles
 
@@ -163,15 +170,15 @@ Create subgroup labels without touching the detector yet.
 
 ### Input
 
-- user history only
-- no target-cycle future information
+- user-level observed cycle summaries for retrospective subgroup assignment
+- per-cycle historical summaries for cold-start-aware baselines and priors
 
 ### Output
 
 A user-level subgroup table containing:
 
 - user id
-- history count
+- observed cycle count
 - historical mean cycle length
 - historical cycle-length SD
 - historical cycle-length CV
@@ -184,7 +191,7 @@ A user-level subgroup table containing:
 - subgroup counts
 - subgroup balance
 - minimum cycle history per subgroup
-- users excluded due to insufficient history
+- users excluded due to insufficient observed cycles for retrospective subgroup assignment
 
 ### Deliverable
 
@@ -212,6 +219,9 @@ For each subgroup under `A1` and `A2`:
 - `OvFinal MAE`
 - detected-cycle rate
 - latency
+
+The saved result table should also include an `overall` row covering all labeled
+cycles, including cold-start `cycle0` cases.
 
 ### Required analysis
 

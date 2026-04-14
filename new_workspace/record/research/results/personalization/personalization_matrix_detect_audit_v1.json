@@ -1,0 +1,22 @@
+{
+  "audit_version": "matrix_detect_v1",
+  "by_countdown_prior": {
+    "history_acl": {
+      "mean_delta_pers_minus_base_over_cycles": 0.0042924755213252916,
+      "mean_post_trigger_mae_base": 2.6889699937776523,
+      "mean_post_trigger_mae_pers": 2.693262469298978,
+      "median_delta_pers_minus_base_over_cycles": 0.0,
+      "n_impute_days_total": 0,
+      "n_labeled_cycles": 79
+    },
+    "population": {
+      "mean_delta_pers_minus_base_over_cycles": 6.960072426936609e-05,
+      "mean_post_trigger_mae_base": 2.644228251280285,
+      "mean_post_trigger_mae_pers": 2.6442978520045552,
+      "median_delta_pers_minus_base_over_cycles": 0.0,
+      "n_impute_days_total": 0,
+      "n_labeled_cycles": 79
+    }
+  },
+  "detect_variant": "HistPhysRefine_vs_Base"
+}

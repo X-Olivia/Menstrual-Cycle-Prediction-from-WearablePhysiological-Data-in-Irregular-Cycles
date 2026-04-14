@@ -16,6 +16,32 @@ This folder is organized into three top-level parts:
 - `code/report_builder.py`
   Builds the consolidated baseline-and-personalization report from generated results.
 
+## Current Scope
+
+The current implementation uses three subgroup axes only:
+
+- `cycle_length_level_group`
+- `cycle_variability_group`
+- `stable_length_profile`
+
+These subgroup labels are retrospective user-level phenotype labels used for
+post hoc analysis only. They are assigned from each user's observed cycle
+history as a whole, so `cycle0` is included in the same subgroup as the rest of
+that user's cycles when enough observed cycles exist to define the subgroup.
+This does not change online behavior: on a cold-start cycle with no prior user
+history, personalization still falls back to `L0 Population`, and calendar
+priors fall back to the population default.
+
+For the cycle-variability axis, the current subgroup labels are still assigned
+with fixed `SD` thresholds. User-level `CV` is now exported alongside `SD` in
+the subgroup tables and summaries as an additional descriptive metric for audit
+and sensitivity analysis.
+
+The earlier `ovulatory_status_group` prototype has been removed from the active
+research code. It depended on LH-label presence as a proxy for ovulatory status,
+which is too entangled with the same label system used for supervision and
+evaluation to support a reliable phenotype split.
+
 ## Main Commands
 
 ```bash
